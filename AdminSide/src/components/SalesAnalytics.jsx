@@ -104,8 +104,10 @@ const SalesAnalytics = () => {
         return '⚡';
       case 'steal':
         return '🔥';
-      default:
+      case 'confirmed':
         return '📦';
+      default:
+        return '❌';
     }
   };
 
@@ -240,7 +242,7 @@ const SalesAnalytics = () => {
                   <span className="text-2xl">{getStatusIcon(status)}</span>
                   <div>
                     <p className="font-medium text-secondary capitalize">{status}</p>
-                    <p className="text-sm text-gray-600">{count} orders</p>
+                    <p className="text-sm text-gray-600">{count} order(s)</p>
                   </div>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(status)}`}>

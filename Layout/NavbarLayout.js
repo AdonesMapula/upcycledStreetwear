@@ -45,8 +45,6 @@ function NavBarLayout({ children }) {
 
       {/* Fixed Bottom Navigation */}
       <View style={styles.bottomNavContainer}>
-        {/* Removed the global indicator */}
-        {/* <View style={[styles.indicator, { left: indicatorPosition }]} /> */}
 
         <View style={styles.bottomNav}>
           {tabs.map((tab) => {

@@ -18,19 +18,19 @@ const ProductManagement = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [imageFile, setImageFile] = useState(null);
+  const [imageFiles, setImageFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
 
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    price: '',
-    category: '',
-    size: '',
-    condition: '',
-    status: 'available',
-    imageUrl: ''
-  });
+  name: '',
+  description: '',
+  price: '',
+  category: '',
+  size: '',
+  condition: '',
+  status: 'available',
+  imageUrls: []
+});
 
   useEffect(() => {
     fetchProducts();
@@ -58,27 +58,30 @@ const ProductManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      let imageUrl = formData.imageUrl; // fallback to existing value
-
-      // If a new image file is selected, upload to Cloudinary
-      if (imageFile) {
+      let imageUrls = formData.imageUrls || [];
+      if (imageFiles.length > 0) {
         setUploading(true);
-        const data = new FormData();
-        data.append("file", imageFile);
-        data.append("upload_preset", "bshhhijy"); // your Cloudinary preset
-        data.append("folder", "shop_products");   // optional
+        const uploadPromises = imageFiles.map(async (file) => {
+          const data = new FormData();
+          data.append("file", file);
+          data.append("upload_preset", "bshhhijy");
+          data.append("folder", "shop_products");
 
-        const res = await axios.post(
-          "https://api.cloudinary.com/v1_1/dznhei4mc/image/upload",
-          data
-        );
-        imageUrl = res.data.secure_url;
+          const res = await axios.post(
+            "https://api.cloudinary.com/v1_1/dznhei4mc/image/upload",
+            data
+          );
+          return res.data.secure_url;
+        });
+
+        const uploadedUrls = await Promise.all(uploadPromises);
+        imageUrls = [...imageUrls, ...uploadedUrls];
         setUploading(false);
       }
 
       const productPayload = {
         ...formData,
-        imageUrl, // use the Cloudinary URL or fallback
+        imageUrls,
         createdAt: editingProduct ? formData.createdAt : new Date()
       };
 
@@ -91,7 +94,7 @@ const ProductManagement = () => {
       }
       resetForm();
       setShowModal(false);
-      setImageFile(null);
+      setImageFiles([]);
     } catch (error) {
       setUploading(false);
       console.error('Error saving product:', error);
@@ -125,10 +128,10 @@ const ProductManagement = () => {
       size: '',
       condition: '',
       status: 'available',
-      imageUrl: ''
+      imageUrls: []
     });
     setEditingProduct(null);
-    setImageFile(null);
+    setImageFiles([]);
   };
 
   const filteredProducts = products.filter(product => {
@@ -217,14 +220,21 @@ const ProductManagement = () => {
         {filteredProducts.map((product) => (
           <div key={product.id} className="card hover:shadow-lg transition-shadow">
             <div className="relative">
-              <img
-                src={product.imageUrl}
-                alt={product.name}
-                className="w-full h-48 object-cover rounded-lg mb-4"
-              />
-              <span className={`absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(product.status)}`}>
-                {product.status.toUpperCase()}
-              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {product.imageUrls?.slice(0, 4).map((url, idx) => (
+                  <img
+                    key={idx}
+                    src={url}
+                    alt={`${product.name} ${idx}`}
+                    className="w-full h-24 object-cover rounded"
+                  />
+                ))}
+              </div>
+              {product.imageUrls?.length > 4 && (
+                <span className="absolute bottom-2 right-2 bg-black bg-opacity-60 text-white text-xs px-2 py-1 rounded">
+                  +{product.imageUrls.length - 4} more
+                </span>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -273,31 +283,49 @@ const ProductManagement = () => {
               
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Image</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Images</label>
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={e => setImageFile(e.target.files[0])}
+                    multiple
+                    onChange={(e) => setImageFiles([...e.target.files])}
                     className="input-field"
                   />
                   {uploading && <p className="text-xs text-blue-500 mt-1">Uploading image...</p>}
-                  {formData.imageUrl && !imageFile && (
-                    <img src={formData.imageUrl} alt="Preview" className="w-24 h-24 object-cover mt-2 rounded" />
+
+                  {/* Show previews of selected images */}
+                  {imageFiles.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      {imageFiles.map((file, idx) => (
+                        <img
+                          key={idx}
+                          src={URL.createObjectURL(file)}
+                          alt="Preview"
+                          className="w-24 h-24 object-cover rounded"
+                        />
+                      ))}
+                    </div>
                   )}
-                  {imageFile && (
-                    <img src={URL.createObjectURL(imageFile)} alt="Preview" className="w-24 h-24 object-cover mt-2 rounded" />
-                  )}
+
+                  {/* Optional: manual URL input */}
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Add Image by URL (optional)</label>
+                    <input
+                      type="url"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && e.target.value) {
+                          setFormData({
+                            ...formData,
+                            imageUrls: [...formData.imageUrls, e.target.value]
+                          });
+                          e.target.value = "";
+                        }
+                      }}
+                      className="input-field"
+                      placeholder="https://example.com/image.jpg"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Or Image URL (optional)</label>
-                  <input
-                    type="url"
-                    value={formData.imageUrl}
-                    onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                    className="input-field"
-                    placeholder="https://example.com/image.jpg"
-                  />
-                </div>                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                   <textarea
@@ -366,18 +394,6 @@ const ProductManagement = () => {
                     </select>
                   </div>
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
-                  <input
-                    type="url"
-                    value={formData.imageUrl}
-                    onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                    className="input-field"
-                    placeholder="https://example.com/image.jpg"
-                  />
-                </div>
-                
                 <div className="flex space-x-3 pt-4">
                   <button
                     type="submit"
