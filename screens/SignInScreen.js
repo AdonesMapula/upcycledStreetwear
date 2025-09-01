@@ -42,7 +42,7 @@ export default function SignInScreen({ navigation }) {
   const [shakeAnim] = useState(new Animated.Value(0))
   const [buttonPulse] = useState(new Animated.Value(1))
 
-  const { signIn, verifyCredentials } = useAuth()
+  const { signIn } = useAuth()
 
   useEffect(() => {
     StatusBar.setBarStyle("light-content", true)
@@ -99,7 +99,7 @@ export default function SignInScreen({ navigation }) {
     }, 2000)
   }, []) // Dependencies for useEffect
 
-  const handleSignIn = useCallback(() => {
+  const handleSignIn = useCallback(async () => {
     console.log("Sign In pressed with:", { email, password })
 
     if (!email || !password) {
@@ -116,11 +116,9 @@ export default function SignInScreen({ navigation }) {
 
     setIsLoading(true)
 
-    // Simulate loading with animation - RESTORED
-    setTimeout(() => {
-      if (verifyCredentials(email, password)) {
-        signIn() // This will switch to MainAppStack and show Welcome screen first
-      } else {
+    try {
+      const result = await signIn(email, password)
+      if (!result.success) {
         setIsLoading(false)
         // Shake animation for invalid credentials - RESTORED
         Animated.sequence([
@@ -129,10 +127,14 @@ export default function SignInScreen({ navigation }) {
           Animated.timing(shakeAnim, { toValue: 15, duration: 60, useNativeDriver: true }),
           Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
         ]).start()
-        Alert.alert("Login Failed", "Invalid email or password. Please try again.")
+        Alert.alert("Login Failed", result.error || "Invalid email or password. Please try again.")
       }
-    }, 1500)
-  }, [email, password, verifyCredentials, signIn]) // Dependencies for useCallback
+    } catch (error) {
+      setIsLoading(false)
+      console.error("Sign in error:", error)
+      Alert.alert("Error", "An unexpected error occurred. Please try again.")
+    }
+  }, [email, password, signIn]) // Dependencies for useCallback
 
   const handleSignUp = useCallback(() => {
     console.log("Sign Up pressed")

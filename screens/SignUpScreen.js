@@ -52,17 +52,23 @@ export default function SignUpScreen({ navigation }) {
     }
 
     setIsLoading(true)
-    // Simulate loading with animation
-    setTimeout(async () => {
-      const success = await registerUser(email, password)
-      if (success) {
-        Alert.alert("Success", "Account created successfully! Please sign in.")
-        navigation.navigate("SignIn")
+    
+    try {
+      const displayName = `${firstName} ${lastName}`
+      const result = await registerUser(email, password, displayName)
+      
+      if (result.success) {
+        Alert.alert("Success", "Account created successfully! You are now signed in.")
+        // User will be automatically signed in after registration
       } else {
         setIsLoading(false)
-        Alert.alert("Sign Up Failed", "Failed to create account. Please try again.")
+        Alert.alert("Sign Up Failed", result.error || "Failed to create account. Please try again.")
       }
-    }, 1500)
+    } catch (error) {
+      setIsLoading(false)
+      console.error("Sign up error:", error)
+      Alert.alert("Error", "An unexpected error occurred. Please try again.")
+    }
   }, [email, firstName, lastName, password, confirmPassword, registerUser, navigation])
 
   return (

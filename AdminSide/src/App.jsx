@@ -5,11 +5,12 @@ import Login from './components/Login';
 import ProductManagement from './components/ProductManagement';
 import SalesAnalytics from './components/SalesAnalytics';
 import CustomerManagement from './components/CustomerManagement';
+import NewsManagement from './components/NewsManagement';
+import OrderManagement from './components/OrderManagement'; // ✅ import Orders
 
 import Sidebar from './components/Sidebar';
 import { auth } from './firebase/config';
 import { onAuthStateChanged } from 'firebase/auth';
-import NewsManagement from './components/NewsManagement';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -47,10 +48,10 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/products" element={<ProductManagement />} />
-            <Route path="/news" element={<NewsManagement/>}/>
+            <Route path="/news" element={<NewsManagement />} />
+            <Route path="/orders" element={<OrderManagement />} /> 
             <Route path="/sales" element={<SalesAnalytics />} />
             <Route path="/customers" element={<CustomerManagement />} />
-
           </Routes>
         </main>
       </div>

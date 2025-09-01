@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import axios from "axios";
 
 const ProductManagement = () => {
   const [products, setProducts] = useState([]);
@@ -17,6 +18,8 @@ const ProductManagement = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [imageFile, setImageFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -55,22 +58,44 @@ const ProductManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      let imageUrl = formData.imageUrl; // fallback to existing value
+
+      // If a new image file is selected, upload to Cloudinary
+      if (imageFile) {
+        setUploading(true);
+        const data = new FormData();
+        data.append("file", imageFile);
+        data.append("upload_preset", "bshhhijy"); // your Cloudinary preset
+        data.append("folder", "shop_products");   // optional
+
+        const res = await axios.post(
+          "https://api.cloudinary.com/v1_1/dznhei4mc/image/upload",
+          data
+        );
+        imageUrl = res.data.secure_url;
+        setUploading(false);
+      }
+
+      const productPayload = {
+        ...formData,
+        imageUrl, // use the Cloudinary URL or fallback
+        createdAt: editingProduct ? formData.createdAt : new Date()
+      };
+
       if (editingProduct) {
-        // Update existing product
-        await updateDoc(doc(db, 'products', editingProduct.id), formData);
-        setProducts(products.map(p => p.id === editingProduct.id ? { ...p, ...formData } : p));
+        await updateDoc(doc(db, 'products', editingProduct.id), productPayload);
+        setProducts(products.map(p => p.id === editingProduct.id ? { ...p, ...productPayload } : p));
       } else {
-        // Add new product
-        const docRef = await addDoc(collection(db, 'products'), {
-          ...formData,
-          createdAt: new Date()
-        });
-        setProducts([...products, { id: docRef.id, ...formData, createdAt: new Date() }]);
+        const docRef = await addDoc(collection(db, 'products'), productPayload);
+        setProducts([...products, { id: docRef.id, ...productPayload }]);
       }
       resetForm();
       setShowModal(false);
+      setImageFile(null);
     } catch (error) {
+      setUploading(false);
       console.error('Error saving product:', error);
+      alert("Failed to save product.");
     }
   };
 
@@ -103,6 +128,7 @@ const ProductManagement = () => {
       imageUrl: ''
     });
     setEditingProduct(null);
+    setImageFile(null);
   };
 
   const filteredProducts = products.filter(product => {
@@ -247,16 +273,31 @@ const ProductManagement = () => {
               
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Image</label>
                   <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    type="file"
+                    accept="image/*"
+                    onChange={e => setImageFile(e.target.files[0])}
                     className="input-field"
-                    required
                   />
+                  {uploading && <p className="text-xs text-blue-500 mt-1">Uploading image...</p>}
+                  {formData.imageUrl && !imageFile && (
+                    <img src={formData.imageUrl} alt="Preview" className="w-24 h-24 object-cover mt-2 rounded" />
+                  )}
+                  {imageFile && (
+                    <img src={URL.createObjectURL(imageFile)} alt="Preview" className="w-24 h-24 object-cover mt-2 rounded" />
+                  )}
                 </div>
-                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Or Image URL (optional)</label>
+                  <input
+                    type="url"
+                    value={formData.imageUrl}
+                    onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                    className="input-field"
+                    placeholder="https://example.com/image.jpg"
+                  />
+                </div>                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                   <textarea
@@ -341,6 +382,7 @@ const ProductManagement = () => {
                   <button
                     type="submit"
                     className="flex-1 btn-primary"
+                    disabled={uploading}
                   >
                     {editingProduct ? 'Update Product' : 'Add Product'}
                   </button>

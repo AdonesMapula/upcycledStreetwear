@@ -1,24 +1,51 @@
-import React, { useState, useCallback, useMemo } from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from "react-native"
+import React, { useState, useCallback, useMemo, useEffect } from "react"
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from "react-native"
 import Feather from "react-native-vector-icons/Feather"
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons"
 import { useAuth } from "../AuthContext"
+import { userService } from "../firebase/services"
 
 export default function ProfileScreen({ navigation }) {
-  const { signOut } = useAuth()
-  const [user] = useState({
-    name: "John Doe",
-    email: "john.doe@example.com",
-    phone: "+1 (555) 123-4567",
-    memberSince: "January 2023",
-    avatar: "https://via.placeholder.com/100x100/CCCCCC/FFFFFF?text=Avatar",
-  })
+  const { signOut, user } = useAuth()
+  const [userData, setUserData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState([
+    { label: "Total Bids", value: "0", icon: "gavel", iconType: "material", color: "#2E6A2E" },
+    { label: "Won Auctions", value: "0", icon: "award", iconType: "feather", color: "#F5A623" },
+    { label: "Success Rate", value: "0%", icon: "trending-up", iconType: "feather", color: "#4A90E2" },
+  ])
 
-  const stats = [
-    { label: "Total Bids", value: "47", icon: "gavel", iconType: "material", color: "#2E6A2E" }, // Corrected iconType
-    { label: "Won Auctions", value: "12", icon: "award", iconType: "feather", color: "#F5A623" }, // Changed trophy to award for Feather
-    { label: "Success Rate", value: "85%", icon: "trending-up", iconType: "feather", color: "#4A90E2" },
-  ]
+  // Fetch user data from Firebase
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!user?.uid) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        const data = await userService.getUserProfile(user.uid)
+        if (data) {
+          setUserData(data)
+          
+          // Update stats with real data (placeholder for now)
+          // In a real app, you'd fetch this from a separate stats collection
+          setStats([
+            { label: "Total Bids", value: data.totalBids?.toString() || "0", icon: "gavel", iconType: "material", color: "#2E6A2E" },
+            { label: "Won Auctions", value: data.wonAuctions?.toString() || "0", icon: "award", iconType: "feather", color: "#F5A623" },
+            { label: "Success Rate", value: data.successRate?.toString() || "0%", icon: "trending-up", iconType: "feather", color: "#4A90E2" },
+          ])
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error)
+        Alert.alert("Error", "Failed to load profile data")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchUserData()
+  }, [user?.uid])
 
   const menuItems = [
     {
@@ -101,93 +128,98 @@ export default function ProfileScreen({ navigation }) {
     )
   }
 
-  const renderIcon = (item) => {
-    if (item.iconType === "material") {
-      return <MaterialCommunityIcons name={item.icon} size={24} color="#666" />
+  const renderIcon = (iconName, iconType, size, color) => {
+    if (iconType === "material") {
+      return <MaterialCommunityIcons name={iconName} size={size} color={color} />
     } else {
-      return <Feather name={item.icon} size={24} color="#666" />
+      return <Feather name={iconName} size={size} color={color} />
     }
   }
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <Feather name="log-out" size={20} color="white" />
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#2E6A2E" />
+        <Text style={styles.loadingText}>Loading profile...</Text>
+      </View>
+    )
+  }
+
+  if (!user) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <Text style={styles.loadingText}>Please sign in to view your profile</Text>
+        <TouchableOpacity style={styles.signInButton} onPress={() => navigation.navigate("SignIn")}>
+          <Text style={styles.signInButtonText}>Sign In</Text>
         </TouchableOpacity>
       </View>
+    )
+  }
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Profile Info */}
-        <View style={styles.profileSection}>
-          <View style={styles.profileCard}>
-            <Image source={{ uri: user.avatar }} style={styles.avatar} />
-            <View style={styles.profileInfo}>
-              <Text style={styles.userName}>{user.name}</Text>
-              <Text style={styles.userEmail}>{user.email}</Text>
-              <Text style={styles.memberSince}>Member since {user.memberSince}</Text>
-            </View>
-            <TouchableOpacity style={styles.editButton}>
-              <Feather name="edit-2" size={16} color="#2E6A2E" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Stats */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Your Stats</Text>
-          <View style={styles.statsContainer}>
-            {stats.map((stat, index) => (
-              <View key={index} style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: stat.color }]}>
-                  {stat.iconType === "material" ? (
-                    <MaterialCommunityIcons name={stat.icon} size={20} color="white" />
-                  ) : (
-                    <Feather name={stat.icon} size={20} color="white" />
-                  )}
-                </View>
-                <Text style={styles.statValue}>{stat.value}</Text>
-                <Text style={styles.statLabel}>{stat.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Menu Items */}
-        <View style={styles.menuSection}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          {menuItems.map((item) => (
-            <TouchableOpacity key={item.id} style={styles.menuItem} onPress={item.onPress}>
-              <View style={styles.menuItemLeft}>
-                <View style={styles.menuIcon}>{renderIcon(item)}</View>
-                <View style={styles.menuText}>
-                  <Text style={styles.menuTitle}>{item.title}</Text>
-                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-                </View>
-              </View>
-              <Feather name="chevron-right" size={20} color="#888" />
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Logout Section */}
-        <View style={styles.logoutSection}>
-          <TouchableOpacity style={styles.logoutCard} onPress={handleLogout}>
-            <View style={styles.logoutIcon}>
-              <Feather name="log-out" size={24} color="#D0021B" />
-            </View>
-            <View style={styles.logoutText}>
-              <Text style={styles.logoutTitle}>Logout</Text>
-              <Text style={styles.logoutSubtitle}>Sign out of your account</Text>
-            </View>
+  return (
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Profile Header */}
+      <View style={styles.profileHeader}>
+        <View style={styles.avatarContainer}>
+          <Image
+            source={{ uri: userData?.photoURL || "https://via.placeholder.com/100x100/CCCCCC/FFFFFF?text=Avatar" }}
+            style={styles.avatar}
+          />
+          <TouchableOpacity style={styles.editAvatarButton}>
+            <Feather name="camera" size={16} color="#fff" />
           </TouchableOpacity>
         </View>
+        
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{userData?.displayName || user?.displayName || "User"}</Text>
+          <Text style={styles.userEmail}>{user?.email}</Text>
+          <Text style={styles.memberSince}>
+            Member since {userData?.createdAt ? new Date(userData.createdAt.toDate()).toLocaleDateString() : "Recently"}
+          </Text>
+        </View>
+      </View>
 
-        <View style={styles.bottomPadding} />
-      </ScrollView>
-    </View>
+      {/* Stats Section */}
+      <View style={styles.statsContainer}>
+        <Text style={styles.sectionTitle}>Your Activity</Text>
+        <View style={styles.statsGrid}>
+          {stats.map((stat, index) => (
+            <View key={index} style={styles.statCard}>
+              <View style={[styles.statIcon, { backgroundColor: stat.color + "20" }]}>
+                {renderIcon(stat.icon, stat.iconType, 24, stat.color)}
+              </View>
+              <Text style={styles.statValue}>{stat.value}</Text>
+              <Text style={styles.statLabel}>{stat.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Menu Items */}
+      <View style={styles.menuContainer}>
+        <Text style={styles.sectionTitle}>Account</Text>
+        {menuItems.map((item) => (
+          <TouchableOpacity key={item.id} style={styles.menuItem} onPress={item.onPress}>
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuItemIcon}>
+                {renderIcon(item.icon, item.iconType, 20, "#666")}
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>{item.title}</Text>
+                <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
+              </View>
+            </View>
+            <Feather name="chevron-right" size={20} color="#ccc" />
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Logout Button */}
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Feather name="log-out" size={20} color="#D0021B" />
+        <Text style={styles.logoutButtonText}>Logout</Text>
+      </TouchableOpacity>
+    </ScrollView>
   )
 }
 
@@ -196,72 +228,81 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F8F9FA",
   },
-  header: {
+  loadingContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#666",
+  },
+  signInButton: {
+    marginTop: 20,
+    backgroundColor: "#2E6A2E",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  signInButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  profileHeader: {
     backgroundColor: "#2E6A2E",
     paddingTop: 50,
     paddingBottom: 20,
     paddingHorizontal: 20,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 20,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "white",
-  },
-  logoutButton: {
-    padding: 8,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  profileSection: {
-    paddingHorizontal: 20,
-    marginTop: 20,
-  },
-  profileCard: {
-    backgroundColor: "white",
-    borderRadius: 15,
-    padding: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+  avatarContainer: {
+    position: "relative",
+    marginRight: 15,
   },
   avatar: {
     width: 70,
     height: 70,
     borderRadius: 35,
-    marginRight: 15,
   },
-  profileInfo: {
+  editAvatarButton: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    backgroundColor: "#2E6A2E",
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "white",
+  },
+  userInfo: {
     flex: 1,
   },
   userName: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: "bold",
-    color: "#333",
+    color: "white",
     marginBottom: 4,
   },
   userEmail: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 16,
+    color: "white",
     marginBottom: 2,
   },
   memberSince: {
-    fontSize: 12,
-    color: "#888",
+    fontSize: 14,
+    color: "white",
   },
-  editButton: {
-    padding: 8,
-  },
-  statsSection: {
+  statsContainer: {
     paddingHorizontal: 20,
-    marginTop: 25,
+    marginTop: 20,
   },
   sectionTitle: {
     fontSize: 20,
@@ -269,7 +310,7 @@ const styles = StyleSheet.create({
     color: "#333",
     marginBottom: 15,
   },
-  statsContainer: {
+  statsGrid: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
@@ -290,7 +331,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#F8F9FA",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 10,
@@ -306,9 +346,9 @@ const styles = StyleSheet.create({
     color: "#666",
     textAlign: "center",
   },
-  menuSection: {
+  menuContainer: {
     paddingHorizontal: 20,
-    marginTop: 25,
+    marginTop: 20,
   },
   menuItem: {
     backgroundColor: "white",
@@ -329,7 +369,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
   },
-  menuIcon: {
+  menuItemIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -338,29 +378,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 15,
   },
-  menuText: {
+  menuItemContent: {
     flex: 1,
   },
-  menuTitle: {
+  menuItemTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
     marginBottom: 2,
   },
-  menuSubtitle: {
+  menuItemSubtitle: {
     fontSize: 14,
     color: "#666",
   },
-  logoutSection: {
-    paddingHorizontal: 20,
-    marginTop: 25,
-  },
-  logoutCard: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 15,
+  logoutButton: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "white",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginTop: 20,
+    marginHorizontal: 20,
     borderWidth: 1,
     borderColor: "#FFE6E6",
     shadowColor: "#000",
@@ -369,29 +409,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  logoutIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFE6E6",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 15,
-  },
-  logoutText: {
-    flex: 1,
-  },
-  logoutTitle: {
+  logoutButtonText: {
+    marginLeft: 10,
     fontSize: 16,
     fontWeight: "600",
     color: "#D0021B",
-    marginBottom: 2,
-  },
-  logoutSubtitle: {
-    fontSize: 14,
-    color: "#666",
-  },
-  bottomPadding: {
-    height: 100,
   },
 })
+

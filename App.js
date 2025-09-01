@@ -7,6 +7,9 @@ import { AuthProvider, useAuth } from "./AuthContext"
 import { View, ActivityIndicator, StyleSheet, Text, Animated } from "react-native"
 import { enableScreens } from "react-native-screens"
 
+// Import Firebase config to ensure it's initialized
+import './firebase/config'
+
 // Enable react-native-screens for better performance
 enableScreens()
 
@@ -30,9 +33,11 @@ import NewsScreen from "./screens/NewsScreen"
 import BiddingScreen from "./screens/BiddingScreen"
 import ProfileScreen from "./screens/ProfileScreen"
 import CartScreen from "./screens/CartScreen" // Import CartScreen
+import ProductDetailScreen from "./screens/ProductDetailScreen" // Import ProductDetailScreen
 
 // Import your NavBarLayout
 import NavBarLayout from "./Layout/NavbarLayout"
+import ErrorBoundary from "./components/ErrorBoundary"
 
 const Stack = createStackNavigator()
 
@@ -84,7 +89,7 @@ function MainAppStack() {
         ...disableAnimations,
         cardStyle: { backgroundColor: "transparent" },
       }}
-      initialRouteName="Welcome"
+      initialRouteName="Home"
     >
       {/* Welcome screen is the first screen after login */}
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
@@ -141,6 +146,9 @@ function MainAppStack() {
           </NavBarLayout>
         )}
       </Stack.Screen>
+
+      {/* Product Detail Screen */}
+      <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
     </Stack.Navigator>
   )
 }
@@ -169,9 +177,11 @@ function RootNavigator() {
 // --- Main App Component ---
 export default function App() {
   return (
-    <AuthProvider>
-      <RootNavigator />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }
 

@@ -7,7 +7,8 @@ import {
   Users, 
   LogOut,
   X,
-  Newspaper
+  Newspaper,
+  ClipboardList // new icon for orders
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase/config';
@@ -20,6 +21,7 @@ const Sidebar = () => {
     { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/products', icon: Package, label: 'Products' },
     { path: '/news', icon: Newspaper, label: 'News'},
+    { path: '/orders', icon: ClipboardList, label: 'Orders' },
     { path: '/sales', icon: TrendingUp, label: 'Sales Analytics' },
     { path: '/customers', icon: Users, label: 'Customers' },
   ];
@@ -43,7 +45,7 @@ const Sidebar = () => {
 
   return (
     <>
-      <div className="w-64 bg-primary text-white p-6">
+      <div className="w-64 bg-primary text-white p-6 flex flex-col">
         <div className="mb-8">
           <div className="flex items-center space-x-3">
             <img src="/logo.png" alt="Upcycled Streetwear Logo" className="h-12 w-12 object-contain" />
@@ -54,7 +56,7 @@ const Sidebar = () => {
           </div>
         </div>
 
-        <nav className="space-y-2">
+        <nav className="space-y-2 flex-1">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
