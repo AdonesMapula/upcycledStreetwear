@@ -6,7 +6,8 @@ import ProductManagement from './components/ProductManagement';
 import SalesAnalytics from './components/SalesAnalytics';
 import CustomerManagement from './components/CustomerManagement';
 import NewsManagement from './components/NewsManagement';
-import OrderManagement from './components/OrderManagement'; // ✅ import Orders
+import OrderManagement from './components/OrderManagement';
+import AiChatbot from './components/AiChatbot'; 
 
 import Sidebar from './components/Sidebar';
 import { auth } from './firebase/config';
@@ -44,6 +45,7 @@ function App() {
     <Router>
       <div className="flex h-screen bg-cream">
         <Sidebar />
+        <AiChatbot /> 
         <main className="flex-1 overflow-auto">
           <Routes>
             <Route path="/" element={<Dashboard />} />
