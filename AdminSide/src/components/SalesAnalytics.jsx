@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, setDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { 
   TrendingUp, 
@@ -16,6 +16,9 @@ import {
   Download,
   X
 } from 'lucide-react';
+import ExportModal from "../modals/ExportModal";
+import ReportModal from "../modals/ReportModal";
+import SalesTargetsModal from "../modals/SalesTargetsModal";
 
 const SalesAnalytics = () => {
   const navigate = useNavigate();
@@ -26,10 +29,42 @@ const SalesAnalytics = () => {
   const [showTargetsModal, setShowTargetsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
 
+  const [targets, setTargets] = useState(null);
+
   useEffect(() => {
     fetchSalesData();
   }, [filterPeriod]);
 
+  // Fetch saved targets when component mounts
+  useEffect(() => {
+    const fetchTargets = async () => {
+      try {
+        const docRef = doc(db, "settings", "salesTargets");
+        const snapshot = await getDoc(docRef);
+        if (snapshot.exists()) {
+          setTargets(snapshot.data());
+        }
+      } catch (error) {
+        console.error("Error fetching targets:", error);
+      }
+    };
+    fetchTargets();
+  }, []);
+
+  // Save new targets
+  const handleSaveTargets = async (newTargets) => {
+    try {
+      const docRef = doc(db, "settings", "salesTargets");
+      await setDoc(docRef, newTargets, { merge: true });
+
+      setTargets(newTargets);
+
+      toast.success("Sales targets saved to Firestore!");
+    } catch (error) {
+      console.error("Error saving targets:", error);
+      toast.error("Failed to save targets.");
+    }
+  };
   const fetchSalesData = async () => {
     try {
       // Fetch orders from Firebase
@@ -53,17 +88,17 @@ const SalesAnalytics = () => {
     }
   };
 
-  const calculateStats = () => {
-    const totalSales = salesData.reduce((sum, sale) => sum + sale.price, 0);
-    const totalOrders = salesData.length;
+  const calculateStats = (data) => {
+    const totalSales = data.reduce((sum, sale) => sum + sale.price, 0);
+    const totalOrders = data.length;
     const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
-    
-    const statusCounts = salesData.reduce((acc, sale) => {
+
+    const statusCounts = data.reduce((acc, sale) => {
       acc[sale.status] = (acc[sale.status] || 0) + 1;
       return acc;
     }, {});
 
-    const categorySales = salesData.reduce((acc, sale) => {
+    const categorySales = data.reduce((acc, sale) => {
       acc[sale.category] = (acc[sale.category] || 0) + sale.price;
       return acc;
     }, {});
@@ -76,12 +111,52 @@ const SalesAnalytics = () => {
       categorySales
     };
   };
+  const getFilteredSales = () => {
+    if (!salesData || salesData.length === 0) return [];
 
-  const stats = calculateStats();
+    const now = new Date();
 
-  const formatPrice = (price) => {
-    return `₱${price.toLocaleString()}`;
+    return salesData.filter((sale) => {
+      const saleDate = new Date(sale.date); // convert string → Date
+
+      switch (filterPeriod) {
+        case 'week': {
+          const oneWeekAgo = new Date();
+          oneWeekAgo.setDate(now.getDate() - 7);
+          return saleDate >= oneWeekAgo && saleDate <= now;
+        }
+        case 'month': {
+          return (
+            saleDate.getMonth() === now.getMonth() &&
+            saleDate.getFullYear() === now.getFullYear()
+          );
+        }
+        case 'quarter': {
+          const currentQuarter = Math.floor(now.getMonth() / 3);
+          const saleQuarter = Math.floor(saleDate.getMonth() / 3);
+          return (
+            saleQuarter === currentQuarter &&
+            saleDate.getFullYear() === now.getFullYear()
+          );
+        }
+        case 'year': {
+          return saleDate.getFullYear() === now.getFullYear();
+        }
+        default:
+          return true;
+      }
+    });
   };
+  const filteredSales = getFilteredSales();
+  const stats = calculateStats(filteredSales);
+
+    const formatPrice = (price) => {
+      if (typeof price !== "number" || isNaN(price)) {
+        return "₱0";
+      }
+      return `₱${price.toLocaleString()}`;
+    };
+
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -106,6 +181,12 @@ const SalesAnalytics = () => {
         return '🔥';
       case 'confirmed':
         return '📦';
+      case 'pending':
+        return '⏳';
+      case 'delivered':
+        return '✅';
+      case 'completed':
+        return '🎉';
       default:
         return '❌';
     }
@@ -142,6 +223,14 @@ const SalesAnalytics = () => {
       </div>
     );
   }
+  // Prevent crashes when targets or salesData are missing
+  if (!salesData || !Array.isArray(salesData)) {
+    return <p className="text-gray-500">Loading sales data...</p>;
+  }
+
+  if (!targets) {
+    return <p className="text-gray-500">Loading sales targets...</p>;
+  }
 
   return (
     <div className="p-8">
@@ -163,6 +252,84 @@ const SalesAnalytics = () => {
           </select>
         </div>
       </div>
+      {/* Sales Targets Section */}
+      {!targets ? (
+        <p className="text-gray-500">Loading sales targets...</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-gray-50 p-4 rounded-2xl shadow-sm">
+            <p className="text-sm font-medium text-gray-600">Revenue Target</p>
+            <p className="text-2xl font-bold text-secondary">
+              {formatPrice(targets.targetSales)}
+            </p>
+            <p className="text-sm text-gray-600">
+              Achieved:{" "}
+              <span className="font-medium text-green-600">
+                {formatPrice(targets.achievedSales)}
+              </span>
+            </p>
+            <div className="w-full bg-gray-200 h-2 rounded-full mt-2">
+              <div
+                className="bg-primary h-2 rounded-full"
+                style={{
+                  width: `${Math.min(
+                    (targets.achievedSales / targets.targetSales) * 100,
+                    100
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-2xl shadow-sm">
+            <p className="text-sm font-medium text-gray-600">Orders Target</p>
+            <p className="text-2xl font-bold text-secondary">
+              {targets.targetOrders}
+            </p>
+            <p className="text-sm text-gray-600">
+              Achieved:{" "}
+              <span className="font-medium text-green-600">
+                {targets.achievedOrders}
+              </span>
+            </p>
+            <div className="w-full bg-gray-200 h-2 rounded-full mt-2">
+              <div
+                className="bg-blue-500 h-2 rounded-full"
+                style={{
+                  width: `${Math.min(
+                    (targets.achievedOrders / targets.targetOrders) * 100,
+                    100
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-2xl shadow-sm">
+            <p className="text-sm font-medium text-gray-600">Conversion Rate Target</p>
+            <p className="text-2xl font-bold text-secondary">
+              {targets.conversionTarget}%
+            </p>
+            <p className="text-sm text-gray-600">
+              Achieved:{" "}
+              <span className="font-medium text-green-600">
+                {targets.conversionAchieved}%
+              </span>
+            </p>
+            <div className="w-full bg-gray-200 h-2 rounded-full mt-2">
+              <div
+                className="bg-orange-500 h-2 rounded-full"
+                style={{
+                  width: `${Math.min(
+                    (targets.conversionAchieved / targets.conversionTarget) * 100,
+                    100
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -293,9 +460,11 @@ const SalesAnalytics = () => {
               </tr>
             </thead>
             <tbody>
-              {salesData.map((sale) => (
+              {filteredSales.map((sale) => (
                 <tr key={sale.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-3 px-4 text-gray-600">{sale.date}</td>
+                  <td className="py-3 px-4 text-gray-600">
+                    {new Date(sale.date).toLocaleDateString()}
+                  </td>
                   <td className="py-3 px-4 font-medium">{sale.customer}</td>
                   <td className="py-3 px-4">{sale.product}</td>
                   <td className="py-3 px-4 text-gray-600">{sale.category}</td>
@@ -308,6 +477,7 @@ const SalesAnalytics = () => {
                 </tr>
               ))}
             </tbody>
+
           </table>
         </div>
       </div>
@@ -382,198 +552,24 @@ const SalesAnalytics = () => {
         </div>
       </div>
 
-      {/* Generate Report Modal */}
-      {showReportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-secondary">Generate Sales Report</h3>
-              <button
-                onClick={() => setShowReportModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Report Type</label>
-                <select className="w-full input-field">
-                  <option>Monthly Sales Report</option>
-                  <option>Quarterly Performance</option>
-                  <option>Annual Summary</option>
-                  <option>Custom Period</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Include Charts</label>
-                <div className="flex items-center space-x-4">
-                  <label className="flex items-center">
-                    <input type="checkbox" className="mr-2" defaultChecked />
-                    <span className="text-sm">Yes</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowReportModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowReportModal(false);
-                  // Here you would implement actual report generation
-                  alert('Sales report generated successfully!');
-                }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Generate Report
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sales Targets Modal */}
-      {showTargetsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-secondary">Set Sales Targets</h3>
-              <button
-                onClick={() => setShowTargetsModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Monthly Sales Target</label>
-                <input 
-                  type="number" 
-                  placeholder="₱50,000" 
-                  className="w-full input-field"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Order Target</label>
-                <input 
-                  type="number" 
-                  placeholder="100 orders" 
-                  className="w-full input-field"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Conversion Rate Target</label>
-                <input 
-                  type="number" 
-                  placeholder="75%" 
-                  className="w-full input-field"
-                />
-              </div>
-            </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowTargetsModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowTargetsModal(false);
-                  alert('Sales targets updated successfully!');
-                }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Save Targets
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Export Data Modal */}
-      {showExportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-secondary">Export Data</h3>
-              <button
-                onClick={() => setShowExportModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Export Format</label>
-                <select className="w-full input-field">
-                  <option>CSV</option>
-                  <option>Excel (.xlsx)</option>
-                  <option>PDF</option>
-                  <option>JSON</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
-                <select className="w-full input-field">
-                  <option>Last 30 days</option>
-                  <option>Last 3 months</option>
-                  <option>Last 6 months</option>
-                  <option>This year</option>
-                  <option>Custom range</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Include</label>
-                <div className="space-y-2">
-                  <label className="flex items-center">
-                    <input type="checkbox" className="mr-2" defaultChecked />
-                    <span className="text-sm">Sales data</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input type="checkbox" className="mr-2" defaultChecked />
-                    <span className="text-sm">Customer information</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input type="checkbox" className="mr-2" />
-                    <span className="text-sm">Product details</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowExportModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowExportModal(false);
-                  alert('Data exported successfully!');
-                }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Export Data
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Export Modal */}
+      <ExportModal
+        show={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        data={filteredSales}
+      />
+      {/* Report Modal */}
+      <ReportModal
+        show={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        data={filteredSales}
+      />
+      {/* Targets Modal */}
+      <SalesTargetsModal
+        show={showTargetsModal}
+        onClose={() => setShowTargetsModal(false)}
+        onSave={handleSaveTargets}
+      />
     </div>
   );
 };

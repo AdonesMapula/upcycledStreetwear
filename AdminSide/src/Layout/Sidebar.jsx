@@ -86,11 +86,11 @@ const Sidebar = () => {
                     className={`group relative flex items-center space-x-2 sm:space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                       isActive 
                         ? "bg-[#113A14] text-white shadow-lg" 
-                        : "text-slate-300 hover:text-white hover:bg-[#A8C3A0]"
+                        : "text-slate-300 hover:text-white hover:bg-[#1d8525]"
                     }`}
                   >
                     {isActive && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#A8C3A0] rounded-r-full"></div>
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00ff11] rounded-r-full"></div>
                     )}
                     <Icon className={`h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0 ${isActive ? "text-white" : "text-slate-400 group-hover:text-white"} transition-colors`} />
                     <span className="font-medium text-sm sm:text-base truncate">{item.label}</span>
