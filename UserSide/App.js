@@ -32,10 +32,14 @@ import NewsScreen from "./Screens/NewsScreen"
 import BiddingScreen from "./Screens/BiddingScreen"
 import ProfileScreen from "./Screens/ProfileScreen"
 import CartScreen from "./Screens/CartScreen"
-import UpcycledUserAssistant from './Screens/UpcycledUserAssistant'
+import UpcycledUserAssistant from "./Screens/UpcycledUserAssistant"
+
 
 // Import your NavBarLayout
 import NavBarLayout from "./Layout/NavbarLayout"
+
+// Import Onboarding Screens
+import OnboardingScreen from "./Screens/OnboardingScreen"
 
 const Stack = createStackNavigator()
 
@@ -61,7 +65,26 @@ const LoadingScreen = ({ message = "Loading..." }) => {
   )
 }
 
-// --- Authentication Stack ---
+// --- Onboarding Stack (First Time Users) ---
+function OnboardingStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        ...disableAnimations,
+        cardStyle: { backgroundColor: "transparent" },
+      }}
+      initialRouteName="Onboarding"
+    >
+      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+      {/* Add authentication screens after onboarding */}
+      <Stack.Screen name="SignIn" component={SignInScreen} />
+      <Stack.Screen name="SignUp" component={SignUpScreen} />
+    </Stack.Navigator>
+  )
+}
+
+// --- Authentication Stack (Returning Users) ---
 function AuthStack() {
   return (
     <Stack.Navigator
@@ -78,7 +101,7 @@ function AuthStack() {
   )
 }
 
-// --- Main App Stack ---
+// --- Main App Stack (Authenticated Users) ---
 function MainAppStack() {
   return (
     <Stack.Navigator
@@ -148,7 +171,7 @@ function MainAppStack() {
 }
 
 // Global App Wrapper with Assistant - this wraps the entire navigation
-const AppWithAssistant = ({ children, currentUser }) => {
+const AppWithAssistant = ({ children, currentUser, showAssistant = true }) => {
   return (
     <View style={styles.appContainer}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFEF7" />
@@ -156,19 +179,34 @@ const AppWithAssistant = ({ children, currentUser }) => {
       {/* Main App Content */}
       {children}
       
-      {/* Global Floating Assistant - Always visible on top of everything */}
-      <UpcycledUserAssistant currentUser={currentUser} />
+      {/* Global Floating Assistant - Hide during onboarding and auth */}
+      {showAssistant && currentUser && <UpcycledUserAssistant currentUser={currentUser} />}
+      
     </View>
   );
 };
 
 // --- Root Navigator ---
 function RootNavigator() {
-  const { isLoggedIn, isLoading, user } = useAuth()
+  const authContext = useAuth()
+  
+  // Destructure with fallbacks to prevent undefined errors
+  const {
+    isLoggedIn = false,
+    isLoading = true,
+    currentUser = null,
+    hasSeenOnboarding = false,
+    hasCompletedAppOnboarding = false
+  } = authContext || {}
 
   if (isLoading) {
-    return <LoadingScreen message="Checking authentication..." />
+    return <LoadingScreen message="Initializing app..." />
   }
+
+  // Flow Logic:
+  // 1. First time app users → Show onboarding tutorial → Show auth
+  // 2. Returning users who've seen onboarding but not logged in → Show auth only
+  // 3. Logged in users → Show main app
 
   return (
     <NavigationContainer
@@ -178,8 +216,24 @@ function RootNavigator() {
         },
       }}
     >
-      <AppWithAssistant currentUser={user}>
-        {isLoggedIn ? <MainAppStack /> : <AuthStack />}
+      <AppWithAssistant 
+        currentUser={currentUser} 
+        showAssistant={isLoggedIn && hasCompletedAppOnboarding}
+      >
+        {(() => {
+          // User is logged in → Main App
+          if (isLoggedIn) {
+            return <MainAppStack />
+          }
+          
+          // User has seen onboarding but not logged in → Auth only
+          if (hasSeenOnboarding) {
+            return <AuthStack />
+          }
+          
+          // First time user → Onboarding + Auth flow
+          return <OnboardingStack />
+        })()}
       </AppWithAssistant>
     </NavigationContainer>
   )

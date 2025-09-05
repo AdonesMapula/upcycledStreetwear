@@ -1,8 +1,9 @@
 // firebase.js
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { initializeAuth, getAuth, getReactNativePersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -15,12 +16,22 @@ const firebaseConfig = {
   measurementId: "G-QLQY51HR40",
 };
 
-// ✅ Prevent duplicate initialization
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// Initialize Firebase app (check if already initialized to avoid errors)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
+// Initialize Auth with proper persistence handling
+let auth;
+if (getApps().length === 1) {
+  // First time initialization - use initializeAuth with persistence
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+  });
+} else {
+  // Already initialized - get existing instance
+  auth = getAuth(app);
+}
 
-// Export Firebase services
-export const auth = getAuth(app);
+// Initialize other services
 export const db = getFirestore(app);
 export const storage = getStorage(app);
-export default app;
+export { auth };

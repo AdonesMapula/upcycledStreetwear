@@ -14,6 +14,9 @@ import { VideoView, useVideoPlayer } from "expo-video"
 import { LinearGradient } from "expo-linear-gradient"
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons"
 
+// Import AuthContext for onboarding integration
+import { useAuth } from "../AuthContext"
+
 // Import your logo image and video
 import USWLogo from "../assets/images/Welcome/USW-Logo.png"
 const welcomeVideo = require("../assets/images/Welcome/USWvideo.mp4")
@@ -21,6 +24,9 @@ const welcomeVideo = require("../assets/images/Welcome/USWvideo.mp4")
 const { width, height } = Dimensions.get("window")
 
 export default function WelcomeScreen({ navigation }) {
+  // Get auth context for onboarding
+  const { setHasCompletedAppOnboarding, currentUser } = useAuth()
+
   // Animation values
   const [fadeAnim] = useState(new Animated.Value(0))
   const [slideUpAnim] = useState(new Animated.Value(50))
@@ -28,6 +34,9 @@ export default function WelcomeScreen({ navigation }) {
   const [buttonScaleAnim] = useState(new Animated.Value(0.9))
   const [pulseAnim] = useState(new Animated.Value(1))
   const [textSlideAnim] = useState(new Animated.Value(30))
+  
+  // Show welcome message with user name
+  const [welcomeText, setWelcomeText] = useState("")
 
   // Using the new expo-video API
   const player = useVideoPlayer(welcomeVideo, (player) => {
@@ -36,7 +45,29 @@ export default function WelcomeScreen({ navigation }) {
     player.muted = true
   })
 
-  useEffect(() => {
+
+    useEffect(() => {
+      // Set personalized welcome text
+      const getFirstName = () => {
+        if (currentUser?.firstName) {
+          return currentUser.firstName
+        }
+        if (currentUser?.name) {
+          return currentUser.name.split(' ')[0]
+        }
+        if (currentUser?.email) {
+          return currentUser.email.split('@')[0]
+        }
+        return 'there'
+      }
+
+      const userName = getFirstName()
+  
+  // ADD THIS LINE:
+  setWelcomeText(`Welcome back, ${userName}!`)
+
+  // Sequential entrance animations...
+
     // Sequential entrance animations
     const entranceAnimation = Animated.sequence([
       // Initial fade in
@@ -93,12 +124,19 @@ export default function WelcomeScreen({ navigation }) {
 
     setTimeout(() => pulseAnimation.start(), 3000)
 
+    // Auto-complete app onboarding after showing welcome
+    const autoCompleteTimer = setTimeout(async () => {
+      await setHasCompletedAppOnboarding(true)
+      navigation.replace("Home")
+    }, 5000) // Auto-proceed after 5 seconds
+
     return () => {
       pulseAnimation.stop()
+      clearTimeout(autoCompleteTimer)
     }
-  }, [])
+  }, [currentUser])
 
-  const handleStartBidding = () => {
+  const handleStartBidding = async () => {
     // Button press animation
     Animated.sequence([
       Animated.timing(buttonScaleAnim, {
@@ -111,8 +149,11 @@ export default function WelcomeScreen({ navigation }) {
         duration: 100,
         useNativeDriver: true,
       }),
-    ]).start(() => {
+    ]).start(async () => {
       console.log("Start Bidding pressed")
+      
+      // Complete app onboarding when user manually proceeds
+      await setHasCompletedAppOnboarding(true)
       navigation.replace("Home")
     })
   }
@@ -150,9 +191,17 @@ export default function WelcomeScreen({ navigation }) {
           {/* Content Area with slide animations */}
           <Animated.View style={[styles.contentArea, { transform: [{ translateY: slideUpAnim }] }]}>
             <Animated.View style={[styles.textContainer, { transform: [{ translateY: textSlideAnim }] }]}>
+              {/* Personalized Welcome Message */}
+              <Text style={styles.welcomeText}>{welcomeText}</Text>
+              
               <Text style={styles.descriptionText}>
                 Fresh finds are waiting! Place your <Text style={styles.highlightText}>bids</Text>, grab the{" "}
                 <Text style={styles.highlightText}>deals</Text>, and shop smart with style.
+              </Text>
+
+              {/* Auto-proceed notice */}
+              <Text style={styles.autoText}>
+                Automatically starting in a moment...
               </Text>
             </Animated.View>
 
@@ -222,6 +271,17 @@ const styles = StyleSheet.create({
     width: "100%",
     marginBottom: 40,
   },
+  welcomeText: {
+    fontSize: 28,
+    color: "#a5eea8ff",
+    textAlign: "left",
+    marginLeft: 20,
+    marginBottom: 15,
+    fontWeight: "bold",
+    textShadowColor: "rgba(0, 0, 0, 0.7)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
   descriptionText: {
     fontSize: 24,
     color: "#FFFCF3",
@@ -229,6 +289,7 @@ const styles = StyleSheet.create({
     lineHeight: 32,
     fontWeight: "400",
     marginLeft: 20,
+    marginBottom: 15,
     textShadowColor: "rgba(0, 0, 0, 0.5)",
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
@@ -236,6 +297,14 @@ const styles = StyleSheet.create({
   highlightText: {
     color: "#a5eea8ff",
     fontWeight: "bold",
+  },
+  autoText: {
+    fontSize: 14,
+    color: "#FFFCF3",
+    textAlign: "center",
+    fontStyle: "italic",
+    opacity: 0.8,
+    marginTop: 10,
   },
   buttonContainer: {
     width: "90%",
@@ -262,4 +331,4 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
-})
+})  

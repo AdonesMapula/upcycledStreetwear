@@ -25,6 +25,8 @@ const { width } = Dimensions.get("window")
 export default function SignUpScreen({ navigation }) {
   const [email, setEmail] = useState("")
   const [firstName, setFirstName] = useState("")
+  const [middleName, setMiddleName] = useState("")
+
   const [lastName, setLastName] = useState("")
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
@@ -37,6 +39,7 @@ export default function SignUpScreen({ navigation }) {
   // State for input focus
   const [isEmailFocused, setIsEmailFocused] = useState(false)
   const [isFirstNameFocused, setIsFirstNameFocused] = useState(false)
+  const [isMiddleNameFocused, setIsMiddleNameFocused] = useState(false)
   const [isLastNameFocused, setIsLastNameFocused] = useState(false)
   const [isPhoneFocused, setIsPhoneFocused] = useState(false)
   const [isAddressFocused, setIsAddressFocused] = useState(false)
@@ -78,6 +81,62 @@ export default function SignUpScreen({ navigation }) {
     return numbers.length === 11 && numbers.startsWith('09')
   }
 
+  // Enhanced password validation
+  const validatePassword = (password) => {
+    const minLength = password.length >= 12
+    const hasUpperCase = /[A-Z]/.test(password)
+    const hasLowerCase = /[a-z]/.test(password)
+    const hasNumber = /\d/.test(password)
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password)
+    
+    return {
+      isValid: minLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar,
+      minLength,
+      hasUpperCase,
+      hasLowerCase,
+      hasNumber,
+      hasSpecialChar
+    }
+  }
+
+  const getPasswordStrengthText = (password) => {
+    if (!password) return ""
+    
+    const validation = validatePassword(password)
+    const requirements = []
+    
+    if (!validation.minLength) requirements.push("12+ characters")
+    if (!validation.hasUpperCase) requirements.push("1 uppercase")
+    if (!validation.hasLowerCase) requirements.push("1 lowercase") 
+    if (!validation.hasNumber) requirements.push("1 number")
+    if (!validation.hasSpecialChar) requirements.push("1 special character")
+    
+    if (requirements.length === 0) {
+      return "✓ Strong password"
+    }
+    
+    return `Missing: ${requirements.join(", ")}`
+  }
+
+  const getPasswordStrengthColor = (password) => {
+    if (!password) return "#888"
+    
+    const validation = validatePassword(password)
+    if (validation.isValid) return "#2E6A2E"
+    
+    const validCount = [
+      validation.minLength,
+      validation.hasUpperCase,
+      validation.hasLowerCase,
+      validation.hasNumber,
+      validation.hasSpecialChar
+    ].filter(Boolean).length
+    
+    if (validCount <= 2) return "#FF6B6B"
+    if (validCount <= 4) return "#FFA500"
+    return "#2E6A2E"
+  }
+
   const handleFirstNameChange = (text) => {
     setFirstName(capitalizeWords(text))
   }
@@ -86,16 +145,20 @@ export default function SignUpScreen({ navigation }) {
     setLastName(capitalizeWords(text))
   }
 
+    const handleMiddleNameChange = (text) => {
+      setMiddleName(capitalizeWords(text))
+    }
+
   const handlePhoneChange = (text) => {
     const formatted = formatPhoneNumber(text)
     setPhone(formatted)
   }
 
   const handleSignUp = useCallback(async () => {
-    console.log("Sign Up pressed with:", { email, firstName, lastName, phone, address, password, confirmPassword })
+    console.log("Sign Up pressed with:", { email, firstName, middleName, lastName, phone, address, password, confirmPassword })
 
     if (!email || !firstName || !lastName || !phone || !address || !password || !confirmPassword) {
-      Alert.alert("Error", "Please fill in all fields")
+      Alert.alert("Error", "Please fill in all required fields marked with *")
       return
     }
 
@@ -112,8 +175,10 @@ export default function SignUpScreen({ navigation }) {
       return
     }
 
-    if (password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters long")
+    // Enhanced password validation
+    const passwordValidation = validatePassword(password)
+    if (!passwordValidation.isValid) {
+      Alert.alert("Error", "Password must contain:\n• At least 12 characters\n• 1 uppercase letter\n• 1 lowercase letter\n• 1 number\n• 1 special character")
       return
     }
 
@@ -129,11 +194,18 @@ export default function SignUpScreen({ navigation }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
       const user = userCredential.user
 
+      // Create full name with middle initial if provided
+      const fullName = middleName 
+        ? `${firstName} ${middleName} ${lastName}`
+        : `${firstName} ${lastName}`
+
+
       // Save additional user data in Firestore
       await setDoc(doc(db, "users", user.uid), {
-        name: `${firstName} ${lastName}`,
+        name: fullName,
         email,
         firstName,
+        middleName: middleName || "",
         lastName,
         phone: phone.replace(/\D/g, ''), // Store phone without formatting
         address,
@@ -155,13 +227,13 @@ export default function SignUpScreen({ navigation }) {
       } else if (error.code === "auth/invalid-email") {
         errorMessage = "Invalid email format."
       } else if (error.code === "auth/weak-password") {
-        errorMessage = "Password should be at least 6 characters."
+        errorMessage = "Password does not meet security requirements."
       }
       Alert.alert("Sign Up Failed", errorMessage)
     } finally {
       setIsLoading(false)
     }
-  }, [email, firstName, lastName, phone, address, password, confirmPassword, navigation])
+  }, [email, firstName, middleName, lastName, phone, address, password, confirmPassword, navigation])
 
   return (
     <View style={styles.fullScreenBackground}>
@@ -180,11 +252,16 @@ export default function SignUpScreen({ navigation }) {
             <Text style={styles.descriptionText}>
               Create a new account to get started. Fill in your details to join and access all features.
             </Text>
+            <Text style={styles.requiredNote}>
+              Fields marked with <Text style={styles.asterisk}>*</Text> are required
+            </Text>
           </View>
 
           {/* Email Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Email:</Text>
+            <Text style={styles.inputLabel}>
+              Email: <Text style={styles.asterisk}>*</Text>
+            </Text>
             <View style={[styles.inputContainer, isEmailFocused && styles.inputFocused]}>
               <MaterialCommunityIcons name="email-outline" size={20} color="#888" style={styles.inputIcon} />
               <TextInput
@@ -204,7 +281,9 @@ export default function SignUpScreen({ navigation }) {
 
           {/* First Name Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>First Name:</Text>
+            <Text style={styles.inputLabel}>
+              First Name: <Text style={styles.asterisk}>*</Text>
+            </Text>
             <View style={[styles.inputContainer, isFirstNameFocused && styles.inputFocused]}>
               <MaterialCommunityIcons name="account-outline" size={20} color="#888" style={styles.inputIcon} />
               <TextInput
@@ -221,9 +300,30 @@ export default function SignUpScreen({ navigation }) {
             </View>
           </View>
 
+          {/* Middle Name Input */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Middle Name:</Text>
+            <View style={[styles.inputContainer, isMiddleNameFocused && styles.inputFocused]}>
+              <MaterialCommunityIcons name="account-details-outline" size={20} color="#888" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Enter Middle Name"
+                placeholderTextColor="#888"
+                autoCapitalize="words"
+                autoCorrect={false}
+                value={middleName}
+                onChangeText={handleMiddleNameChange}
+                onFocus={() => setIsMiddleNameFocused(true)}
+                onBlur={() => setIsMiddleNameFocused(false)}
+              />
+            </View>
+          </View>
+
           {/* Last Name Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Last Name:</Text>
+            <Text style={styles.inputLabel}>
+              Last Name: <Text style={styles.asterisk}>*</Text>
+            </Text>
             <View style={[styles.inputContainer, isLastNameFocused && styles.inputFocused]}>
               <MaterialCommunityIcons name="account-outline" size={20} color="#888" style={styles.inputIcon} />
               <TextInput
@@ -243,7 +343,7 @@ export default function SignUpScreen({ navigation }) {
           {/* Phone Number Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>
-              Phone Number: 
+              Phone Number: <Text style={styles.asterisk}>*</Text>
               <Text style={styles.phoneHint}> (11 digits, starts with 09)</Text>
             </Text>
             <View style={[
@@ -274,7 +374,9 @@ export default function SignUpScreen({ navigation }) {
 
           {/* Address Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Address:</Text>
+            <Text style={styles.inputLabel}>
+              Address: <Text style={styles.asterisk}>*</Text>
+            </Text>
             <View style={[styles.inputContainer, isAddressFocused && styles.inputFocused]}>
               <MaterialCommunityIcons name="map-marker-outline" size={20} color="#888" style={styles.inputIcon} />
               <TextInput
@@ -295,13 +397,17 @@ export default function SignUpScreen({ navigation }) {
           {/* Password Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>
-              Password:
-              <Text style={styles.passwordHint}> (minimum 6 characters)</Text>
+              Password: <Text style={styles.asterisk}>*</Text>
             </Text>
+            <View style={styles.passwordRequirements}>
+              <Text style={styles.passwordRequirementsText}>
+                Must contain: 12+ chars, 1 uppercase, 1 lowercase, 1 number, 1 special character
+              </Text>
+            </View>
             <View style={[
               styles.inputContainer, 
               isPasswordFocused && styles.inputFocused,
-              password && password.length < 6 && styles.inputError
+              password && !validatePassword(password).isValid && styles.inputError
             ]}>
               <MaterialCommunityIcons name="lock-outline" size={20} color="#888" style={styles.inputIcon} />
               <TextInput
@@ -324,14 +430,18 @@ export default function SignUpScreen({ navigation }) {
                 <Feather name={showPassword ? "eye" : "eye-off"} size={20} color="#888" />
               </TouchableOpacity>
             </View>
-            {password && password.length < 6 && (
-              <Text style={styles.errorText}>Password must be at least 6 characters</Text>
+            {password && (
+              <Text style={[styles.passwordStrengthText, { color: getPasswordStrengthColor(password) }]}>
+                {getPasswordStrengthText(password)}
+              </Text>
             )}
           </View>
 
           {/* Confirm Password Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Confirm Password:</Text>
+            <Text style={styles.inputLabel}>
+              Confirm Password: <Text style={styles.asterisk}>*</Text>
+            </Text>
             <View style={[
               styles.inputContainer, 
               isConfirmPasswordFocused && styles.inputFocused,
@@ -357,7 +467,7 @@ export default function SignUpScreen({ navigation }) {
               >
                 <Feather name={showConfirmPassword ? "eye" : "eye-off"} size={20} color="#888" />
               </TouchableOpacity>
-              {confirmPassword && password === confirmPassword && (
+              {confirmPassword && password === confirmPassword && password && (
                 <MaterialCommunityIcons name="check-circle" size={20} color="#2E6A2E" />
               )}
             </View>
@@ -428,6 +538,7 @@ const styles = StyleSheet.create({
   },
   descriptionContainer: {
     marginBottom: 30,
+    alignItems: "center",
   },
   descriptionText: {
     fontSize: 16,
@@ -435,6 +546,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 20,
     fontWeight: "normal",
+    marginBottom: 5,
+  },
+  requiredNote: {
+    fontSize: 12,
+    color: "#666",
+    textAlign: "center",
+    fontStyle: "italic",
   },
   inputGroup: {
     width: "100%",
@@ -448,17 +566,31 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     marginLeft: 5,
   },
+  asterisk: {
+    color: "#FF6B6B",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  optionalText: {
+    fontSize: 12,
+    fontWeight: "normal",
+    color: "#888",
+    fontStyle: "italic",
+  },
   phoneHint: {
     fontSize: 12,
     fontWeight: "normal",
     color: "#888",
     fontStyle: "italic",
   },
-  passwordHint: {
-    fontSize: 12,
-    fontWeight: "normal",
-    color: "#888",
+  passwordRequirements: {
+    marginBottom: 5,
+  },
+  passwordRequirementsText: {
+    fontSize: 11,
+    color: "#666",
     fontStyle: "italic",
+    marginLeft: 5,
   },
   inputContainer: {
     flexDirection: "row",
@@ -474,6 +606,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  smallInputContainer: {
+    width: 100,
+    alignSelf: "flex-start",
   },
   inputFocused: {
     borderColor: "#2E6A2E",
@@ -493,6 +629,9 @@ const styles = StyleSheet.create({
     color: "#333",
     paddingVertical: 12,
   },
+  centerText: {
+    textAlign: "center",
+  },
   inputIcon: {
     marginRight: 10,
   },
@@ -505,6 +644,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 5,
     marginLeft: 5,
+  },
+  passwordStrengthText: {
+    fontSize: 12,
+    marginTop: 5,
+    marginLeft: 5,
+    fontWeight: "500",
   },
   buttonContainer: {
     width: "100%",

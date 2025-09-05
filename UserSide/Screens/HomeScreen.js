@@ -114,23 +114,6 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* Categories */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Browse Categories</Text>
-        <View style={styles.categoriesGrid}>
-          {categories.map((category) => (
-            <TouchableOpacity
-              key={category.id}
-              style={[styles.categoryCard, { borderColor: category.color }]}
-              onPress={() => navigation.navigate("Category", { categoryId: category.id })}
-            >
-              <View style={[styles.categoryIcon, { backgroundColor: category.color }]}>
-                <Feather name={category.icon} size={24} color="white" />
-              </View>
-              <Text style={styles.categoryName}>{category.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
 
       {/* Featured Items */}
       <View style={styles.section}>
@@ -168,31 +151,6 @@ export default function HomeScreen({ navigation }) {
         </ScrollView>
       </View>
 
-      {/* Recent Activity */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
-        <View style={styles.activityContainer}>
-          <View style={styles.activityItem}>
-            <View style={styles.activityIcon}>
-              <Feather name="trending-up" size={16} color="#2E6A2E" />
-            </View>
-            <View style={styles.activityContent}>
-              <Text style={styles.activityTitle}>You placed a bid on "Vintage Camera"</Text>
-              <Text style={styles.activityTime}>2 hours ago</Text>
-            </View>
-          </View>
-
-          <View style={styles.activityItem}>
-            <View style={styles.activityIcon}>
-              <Feather name="award" size={16} color="#D0021B" />
-            </View>
-            <View style={styles.activityContent}>
-              <Text style={styles.activityTitle}>You won "Designer Sunglasses"</Text>
-              <Text style={styles.activityTime}>1 day ago</Text>
-            </View>
-          </View>
-        </View>
-      </View>
 
       {/* Bottom padding for navigation */}
       <View style={styles.bottomPadding} />
