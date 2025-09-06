@@ -5,57 +5,58 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
-  ScrollView,
   Animated,
   SafeAreaView,
   FlatList,
+  ImageBackground,
 } from 'react-native';
 import { useAuth } from '../AuthContext';
 import { useNavigation } from '@react-navigation/native';
 
+// Import background images
+import background1 from '../assets/images/onBoarding/background1.png';
+import background2 from '../assets/images/onBoarding/background2.png';
+import background3 from '../assets/images/onBoarding/background3.png';
+import background4 from '../assets/images/onBoarding/background4.png';
+import background5 from '../assets/images/onBoarding/background5.png';
+
 const { width, height } = Dimensions.get('window');
 
-// Onboarding data for your Upcycled app
 const onboardingData = [
   {
     id: 1,
-    title: 'Welcome to Upcycled!',
+    title: 'Welcome to Upcycled',
     description: 'Transform waste into wonderful creations and join our sustainable community where every item gets a second life.',
-    backgroundColor: '#E8F5E8',
-    icon: '🌱',
-    features: ['♻️ Eco-friendly marketplace', '🌍 Global sustainability community', '💚 Make a positive impact']
+    backgroundImage: background1,
+    features: ['Pre-loved fashion, fresh stories', 'Shop smart, join a movement', 'Your style choices that Matters']
   },
   {
     id: 2,
     title: 'Discover Amazing Products',
-    description: 'Browse through our marketplace of unique upcycled items created by passionate makers around the world.',
-    backgroundColor: '#E3F2FD',
-    icon: '🔍',
-    features: ['🛍️ Unique handcrafted items', '🏪 Support local creators', '⭐ Quality guaranteed products']
+    description: 'Discover hidden gems in our thrifted fashion marketplace pre-loved pieces with new stories waiting to be worn.',
+    backgroundImage: background2,
+    features: ['Thrifted, re-loved, and ready to shine', 'Ethical shopping made simple', 'Quality guaranteed products']
   },
   {
     id: 3,
     title: 'Join Exciting Auctions',
-    description: 'Participate in live bidding sessions and win exclusive upcycled treasures at amazing prices.',
-    backgroundColor: '#FFF3E0',
-    icon: '🏆',
-    features: ['⏰ Live bidding experience', '💎 Exclusive rare finds', '🎯 Win amazing deals']
+    description: 'Participate in our bidding sessions and win exclusive upcycled treasures at amazing prices.',
+    backgroundImage: background3,
+    features: ['Bidding Experience', 'Feels like Thrifting', 'Amazing deals ahead']
   },
   {
     id: 4,
     title: 'Stay Connected',
-    description: 'Get the latest sustainability news, upcycling tips, and updates from our eco-conscious community.',
-    backgroundColor: '#F3E5F5',
-    icon: '📰',
-    features: ['📱 Latest eco news', '💡 DIY upcycling tips', '🤝 Community stories']
+    description:'Stay updated with the latest announcements, new items to bid on, and all things thrift.',
+    backgroundImage: background5,
+    features: ['Latest platform announcements', 'New items to bid', 'Important updates']
   },
   {
     id: 5,
     title: 'Your AI Shopping Assistant',
     description: 'Meet your personal AI helper! Get recommendations, ask questions, and discover products tailored just for you.',
-    backgroundColor: '#E8F5E8',
-    icon: '🤖',
-    features: ['🎯 Personalized recommendations', '❓ 24/7 help & support', '🔮 Smart shopping insights']
+    backgroundImage: background4,
+    features: ['Personalized thrift picks', '24/7 support', 'Smart bidding & shopping insights']
   },
 ];
 
@@ -78,24 +79,16 @@ const OnboardingScreen = () => {
     if (currentIndex < onboardingData.length - 1) {
       slidesRef.current.scrollToIndex({ index: currentIndex + 1 });
     } else {
-      // Complete onboarding and navigate to sign in
       completeOnboarding();
     }
   };
 
-  const skipOnboarding = () => {
-    completeOnboarding();
-  };
-
   const completeOnboarding = async () => {
     try {
-      // Mark that user has seen onboarding
       await setHasSeenOnboarding(true);
-      // Navigate to sign in screen
       navigation.navigate('SignIn');
     } catch (error) {
       console.error('Error completing onboarding:', error);
-      // Fallback navigation
       navigation.navigate('SignIn');
     }
   };
@@ -108,28 +101,24 @@ const OnboardingScreen = () => {
 
   const OnboardingItem = ({ item }) => (
     <View style={[styles.slide, { width }]}>
-      <View style={[styles.container, { backgroundColor: item.backgroundColor }]}>
+      <ImageBackground
+        source={item.backgroundImage}
+        style={styles.imageBackground}
+        resizeMode="cover"
+      >
+        {/* Dark overlay to make background more solid */}
+        <View style={styles.overlay} />
+
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.content}>
-            {/* Header with Skip Button */}
-            <View style={styles.header}>
-              <TouchableOpacity 
-                style={styles.skipButton} 
-                onPress={skipOnboarding}
-              >
-                <Text style={styles.skipText}>Skip Tutorial</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Icon and Main Content */}
+            {/* Main Content */}
             <View style={styles.mainContent}>
               <Text style={styles.iconText}>{item.icon}</Text>
-              
+
               <View style={styles.textContainer}>
                 <Text style={styles.title}>{item.title}</Text>
                 <Text style={styles.description}>{item.description}</Text>
-                
-                {/* Features List */}
+
                 <View style={styles.featuresContainer}>
                   {item.features.map((feature, index) => (
                     <Text key={index} style={styles.featureText}>
@@ -142,20 +131,18 @@ const OnboardingScreen = () => {
 
             {/* Navigation Controls */}
             <View style={styles.navigationContainer}>
-              {/* Pagination Dots */}
               <View style={styles.pagination}>
                 {onboardingData.map((_, index) => (
                   <View
                     key={index}
                     style={[
                       styles.dot,
-                      index === currentIndex ? styles.activeDot : styles.inactiveDot
+                      index === currentIndex ? styles.activeDot : styles.inactiveDot,
                     ]}
                   />
                 ))}
               </View>
 
-              {/* Navigation Buttons */}
               <View style={styles.buttonsContainer}>
                 {currentIndex > 0 && (
                   <TouchableOpacity
@@ -165,22 +152,21 @@ const OnboardingScreen = () => {
                     <Text style={styles.backButtonText}>← Back</Text>
                   </TouchableOpacity>
                 )}
-                
+
                 <View style={styles.spacer} />
-                
-                <TouchableOpacity
-                  style={styles.nextButton}
-                  onPress={scrollTo}
-                >
+
+                <TouchableOpacity style={styles.nextButton} onPress={scrollTo}>
                   <Text style={styles.nextButtonText}>
-                    {currentIndex === onboardingData.length - 1 ? '🚀 Continue to Sign In' : 'Next →'}
+                    {currentIndex === onboardingData.length - 1
+                      ? 'Continue to Sign In'
+                      : 'Next →'}
                   </Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         </SafeAreaView>
-      </View>
+      </ImageBackground>
     </View>
   );
 
@@ -210,13 +196,19 @@ const OnboardingScreen = () => {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#000',
   },
   slide: {
     flex: 1,
   },
-  container: {
+  imageBackground: {
     flex: 1,
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject
   },
   safeArea: {
     flex: 1,
@@ -224,29 +216,14 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingTop: 10,
-    paddingBottom: 20,
-  },
-  skipButton: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 15,
-  },
-  skipText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
+    justifyContent: 'space-between',
   },
   mainContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 20,
+    marginTop: -90
   },
   iconText: {
     fontSize: 80,
@@ -257,30 +234,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2E6A2E',
-    textAlign: 'center',
-    marginBottom: 15,
-    lineHeight: 34,
-  },
+   title: {
+  fontSize: 50,
+  fontWeight: '900',         // make it bolder
+  fontFamily: 'cursive',   // monospace font
+  color: '#2E6A2E',
+  textAlign: 'center',
+  marginBottom: 15,
+  lineHeight: 70,
+},
   description: {
-    fontSize: 16,
-    color: '#555',
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'sans-serif',
+    color: '#000000ff',
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 25,
-    paddingHorizontal: 10,
+    paddingHorizontal: 15
   },
   featuresContainer: {
     alignItems: 'flex-start',
   },
   featureText: {
     fontSize: 16,
-    color: '#2E6A2E',
-    marginBottom: 8,
+    fontFamily: 'sans-serif',
     fontWeight: '500',
+    color: '#000000ff',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   navigationContainer: {
     paddingBottom: 40,
@@ -312,8 +294,8 @@ const styles = StyleSheet.create({
   backButton: {
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 7,
+    backgroundColor: 'rgba(255,255,255,0.8)',
   },
   backButtonText: {
     color: '#2E6A2E',
@@ -327,7 +309,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#2E6A2E',
     paddingVertical: 15,
     paddingHorizontal: 30,
-    borderRadius: 25,
+    marginBottom: 10,
+    borderRadius: 10,
     minWidth: 120,
     shadowColor: '#000',
     shadowOffset: {
