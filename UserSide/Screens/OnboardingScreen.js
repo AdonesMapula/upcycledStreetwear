@@ -236,12 +236,16 @@ const styles = StyleSheet.create({
   },
    title: {
   fontSize: 50,
-  fontWeight: '900',         // make it bolder
-  fontFamily: 'cursive',   // monospace font
+  fontWeight: '900',
+  fontFamily: 'cursive',
   color: '#2E6A2E',
   textAlign: 'center',
   marginBottom: 15,
   lineHeight: 70,
+
+  textShadowColor: '#fff',
+  textShadowOffset: { width: 2, height: 1 },
+  textShadowRadius: 5,
 },
   description: {
     fontSize: 18,

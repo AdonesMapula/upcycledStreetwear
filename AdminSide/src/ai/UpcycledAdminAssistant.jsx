@@ -9,6 +9,10 @@ import {
   getDocs,
   where,
   limit,
+  doc,
+  updateDoc,
+  deleteDoc,
+  Timestamp
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { 
@@ -22,7 +26,10 @@ import {
   FileText,
   TrendingUp,
   Calendar,
-  DollarSign
+  DollarSign,
+  AlertTriangle,
+  CheckCircle,
+  Clock
 } from "lucide-react";
 
 const UpcycledAdminAssistant = () => {
@@ -40,8 +47,17 @@ const UpcycledAdminAssistant = () => {
     totalProducts: 0,
     monthlyRevenue: 0,
     pendingOrders: 0,
-    lowStockItems: 0
+    availableItems: 0,
+    soldItems: 0,
+    todayOrders: 0,
+    todayRevenue: 0,
+    topProducts: [],
+    recentCustomers: []
   });
+
+  // Your Gemini API key - Get this free from https://makersuite.google.com/app/apikey
+  const GEMINI_API_KEY = import.meta.env.REACT_APP_GEMINI_API_KEY || "AIzaSyAJaYkB3G69TzOWQ66bwVMmlQHR5ug3Jt0";
+  const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
 
   useEffect(() => {
     if (isOpen && messages.length === 0) {
@@ -54,234 +70,330 @@ const UpcycledAdminAssistant = () => {
   }, [messages]);
 
   useEffect(() => {
-    // Load admin statistics when component mounts
+    // Load admin statistics when component mounts and set up real-time updates
     loadAdminStats();
+    const interval = setInterval(loadAdminStats, 30000); // Update every 30 seconds
+    return () => clearInterval(interval);
   }, []);
 
   const initializeChat = () => {
     const welcomeMessage = {
       id: 1,
-      text: "Hello Admin! I'm your Upcycled Streetwear assistant. I can help you with:\n\n• Customer Management\n• Order Management\n• Product Management\n• Sales Analytics\n• News Management\n\nWhat would you like to know?",
+      text: "Hello Admin! I'm your intelligent Upcycled Streetwear assistant powered by AI. I can help you with real-time data analysis, customer management, order processing, inventory tracking, and much more. Just ask me anything about your business!",
       sender: 'bot',
       timestamp: new Date(),
     };
     setMessages([welcomeMessage]);
   };
 
-  // Load admin statistics from database
+  // Enhanced admin statistics loader with more detailed data
   const loadAdminStats = async () => {
     try {
-      // Customers count
+      const today = new Date();
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+      // Customers
       const customersQuery = query(collection(db, 'users'));
       const customersSnap = await getDocs(customersQuery);
       
-      // Orders count and revenue
+      // Recent customers (last 7 days)
+      const recentCustomersQuery = query(
+        collection(db, 'users'),
+        where('createdAt', '>=', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+        orderBy('createdAt', 'desc'),
+        limit(5)
+      );
+      const recentCustomersSnap = await getDocs(recentCustomersQuery);
+
+      // Orders analysis
       const ordersQuery = query(collection(db, 'orders'));
       const ordersSnap = await getDocs(ordersQuery);
-      let monthlyRevenue = 0;
-      let pendingOrders = 0;
       
+      let monthlyRevenue = 0;
+      let todayRevenue = 0;
+      let pendingOrders = 0;
+      let todayOrders = 0;
+      const productSales = {};
+
       ordersSnap.docs.forEach(doc => {
         const orderData = doc.data();
-        const orderDate = orderData.createdAt?.toDate();
-        const currentMonth = new Date().getMonth();
-        const currentYear = new Date().getFullYear();
+        const orderDate = orderData.createdAt?.toDate() || new Date(orderData.createdAt);
         
-        if (orderDate && orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear) {
+        // Monthly revenue
+        if (orderDate >= startOfMonth) {
           monthlyRevenue += orderData.total || 0;
         }
         
+        // Today's metrics
+        if (orderDate >= startOfDay) {
+          todayRevenue += orderData.total || 0;
+          todayOrders++;
+        }
+        
+        // Pending orders
         if (orderData.status === 'pending') {
           pendingOrders++;
         }
-      });
-      
-      // Products count and low stock
-      const productsQuery = query(collection(db, 'products'));
-      const productsSnap = await getDocs(productsQuery);
-      let lowStockItems = 0;
-      
-      productsSnap.docs.forEach(doc => {
-        const productData = doc.data();
-        if (productData.quantity <= 5) {
-          lowStockItems++;
+
+        // Product popularity
+        if (orderData.items) {
+          orderData.items.forEach(item => {
+            productSales[item.name] = (productSales[item.name] || 0) + item.quantity;
+          });
         }
       });
+
+      // Products and inventory
+      const productsQuery = query(collection(db, 'products'));
+      const productsSnap = await getDocs(productsQuery);
+      let availableItems = 0;
+      let soldItems = 0;
+
+      productsSnap.docs.forEach(doc => {
+        const productData = doc.data();
+        if (productData.status === "available") {
+          availableItems++;
+        } else if (productData.status === "sold") {
+          soldItems++;
+        }
+      });
+
+
+      // Top products
+      const topProducts = Object.entries(productSales)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 5)
+        .map(([name, sales]) => ({ name, sales }));
 
       setAdminStats({
         totalCustomers: customersSnap.size,
         totalOrders: ordersSnap.size,
         totalProducts: productsSnap.size,
         monthlyRevenue,
+        todayRevenue,
         pendingOrders,
-        lowStockItems
+        todayOrders,
+        availableItems,
+        soldItems,
+        topProducts,
+        recentCustomers: recentCustomersSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
       });
     } catch (error) {
       console.error('Error loading admin stats:', error);
     }
   };
 
-  // Enhanced AI response with database queries
-  const getAdminResponse = async (userMessageText) => {
+  // Get specific data based on user query
+  const getContextualData = async (query) => {
+    const lowerQuery = query.toLowerCase();
+    let contextData = { stats: adminStats };
+
     try {
-      const lowerInput = userMessageText.toLowerCase();
-      
-      // Database-connected responses
-      if (lowerInput.includes('sales') || lowerInput.includes('revenue') || lowerInput.includes('analytics')) {
-        // Get recent sales data
+      // Orders context
+      if (lowerQuery.includes('order') || lowerQuery.includes('claim') || lowerQuery.includes('sale')) {
         const ordersQuery = query(
           collection(db, 'orders'),
-          where('createdAt', '>=', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
-          orderBy('createdAt', 'desc')
+          orderBy('createdAt', 'desc'),
+          limit(10)
         );
         const ordersSnap = await getDocs(ordersQuery);
-        
-        let totalSales = 0;
-        let completedOrders = 0;
-        ordersSnap.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.status === 'completed') {
-            totalSales += data.total || 0;
-            completedOrders++;
-          }
-        });
-
-        return `📊 **Sales Analytics (Last 30 days):**
-        
-• Total Revenue: ₱${totalSales.toLocaleString()}
-• Completed Orders: ${completedOrders}
-• Monthly Revenue: ₱${adminStats.monthlyRevenue.toLocaleString()}
-• Pending Orders: ${adminStats.pendingOrders}
-• Average Order Value: ₱${completedOrders > 0 ? Math.round(totalSales / completedOrders) : 0}
-
-Would you like detailed reports on specific metrics?`;
+        contextData.recentOrders = ordersSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
       }
 
-      if (lowerInput.includes('customer') || lowerInput.includes('user')) {
-        const recentCustomersQuery = query(
+      // Customer context
+      if (lowerQuery.includes('customer') || lowerQuery.includes('user')) {
+        const customersQuery = query(
           collection(db, 'users'),
           orderBy('createdAt', 'desc'),
-          limit(5)
+          limit(10)
         );
-        const recentCustomersSnap = await getDocs(recentCustomersQuery);
-        
-        return `👥 **Customer Management Overview:**
-        
-• Total Customers: ${adminStats.totalCustomers}
-• New Customers (Last 5): ${recentCustomersSnap.size}
-• Active Sessions: Available in user analytics
-
-**Recent Customer Activities:**
-${recentCustomersSnap.docs.map((doc, idx) => 
-  `${idx + 1}. ${doc.data().name || 'Customer'} - ${doc.data().email}`
-).join('\n')}
-
-Need help with customer queries, account management, or user analytics?`;
+        const customersSnap = await getDocs(customersQuery);
+        contextData.customers = customersSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
       }
 
-      if (lowerInput.includes('product') || lowerInput.includes('inventory') || lowerInput.includes('stock')) {
+      // Product context
+      if (lowerQuery.includes('product') || lowerQuery.includes('inventory') || lowerQuery.includes('stock')) {
+        const productsQuery = query(collection(db, 'products'));
+        const productsSnap = await getDocs(productsQuery);
+        contextData.products = productsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+      }
+
+      // Low stock specific
+      if (lowerQuery.includes('low stock') || lowerQuery.includes('inventory alert')) {
         const lowStockQuery = query(
           collection(db, 'products'),
           where('quantity', '<=', 5)
         );
         const lowStockSnap = await getDocs(lowStockQuery);
-        
-        return `📦 **Product Management Status:**
-        
-• Total Products: ${adminStats.totalProducts}
-• Low Stock Items: ${adminStats.lowStockItems}
-• Out of Stock: ${lowStockSnap.docs.filter(doc => doc.data().quantity === 0).length}
-
-**🚨 Low Stock Alert:**
-${lowStockSnap.docs.map((doc, idx) => {
-  const data = doc.data();
-  return `${idx + 1}. ${data.name} - ${data.quantity} left`;
-}).join('\n') || 'All items well stocked!'}
-
-Need help updating inventory, adding products, or managing categories?`;
+        contextData.lowStockProducts = lowStockSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
       }
 
-      if (lowerInput.includes('order') || lowerInput.includes('claim')) {
-        const pendingOrdersQuery = query(
-          collection(db, 'orders'),
-          where('status', '==', 'pending'),
+      // News/announcements context
+      if (lowerQuery.includes('news') || lowerQuery.includes('announcement')) {
+        const newsQuery = query(
+          collection(db, 'news'),
           orderBy('createdAt', 'desc'),
-          limit(10)
+          limit(5)
         );
-        const pendingOrdersSnap = await getDocs(pendingOrdersQuery);
-        
-        return `🛍️ **Order Management Dashboard:**
-        
-• Total Orders: ${adminStats.totalOrders}
-• Pending Orders: ${adminStats.pendingOrders}
-• Processing Queue: ${pendingOrdersSnap.size}
-
-**Recent Pending Orders:**
-${pendingOrdersSnap.docs.map((doc, idx) => {
-  const data = doc.data();
-  return `${idx + 1}. Order #${doc.id.slice(-6)} - ₱${data.total} - ${data.customerName}`;
-}).join('\n') || 'No pending orders!'}
-
-Need help processing claims, updating order status, or managing the bidding system?`;
-      }
-
-      if (lowerInput.includes('news') || lowerInput.includes('announcement') || lowerInput.includes('update')) {
-        return `📰 **News & Content Management:**
-        
-• Create announcements for item drops
-• Schedule time-based releases
-• Manage keyword claiming events
-• Update store policies
-
-**Popular Actions:**
-• "Schedule new drop" - Set up timed releases
-• "Create announcement" - Notify customers
-• "Update policies" - Modify terms and conditions
-• "Manage keywords" - Set claiming triggers
-
-What type of content would you like to manage?`;
-      }
-
-      // General responses for admin functions
-      const adminResponses = {
-        "help": `🔧 **Admin Functions Available:**
-        
-**📊 Analytics:** "show sales", "revenue report", "monthly stats"
-**👥 Customers:** "customer list", "user management", "account issues"  
-**📦 Products:** "inventory status", "low stock", "add product"
-**🛍️ Orders:** "pending orders", "order status", "claims queue"
-**📰 News:** "create announcement", "schedule drop", "manage content"
-
-Just ask naturally! Example: "Show me this month's sales" or "Any low stock items?"`,
-        
-        "greeting": "Welcome to Upcycled Streetwear Admin Panel! I can help you manage customers, orders, products, sales analytics, and news content. What do you need assistance with?",
-        
-        "default": "I'm here to help you manage your Upcycled Streetwear operations! I can assist with customer management, order processing, inventory tracking, sales analytics, and content management. What specific area would you like help with?"
-      };
-
-      // Determine response type
-      if (lowerInput.includes('help') || lowerInput.includes('what can you')) {
-        return adminResponses.help;
-      } else if (lowerInput.includes('hello') || lowerInput.includes('hi')) {
-        return adminResponses.greeting;
-      } else {
-        return adminResponses.default;
+        const newsSnap = await getDocs(newsQuery);
+        contextData.news = newsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
       }
 
     } catch (error) {
-      console.error('Admin AI Error:', error);
-      return "I'm having trouble accessing the admin data right now. Please try again, or check if you need to refresh the database connection.";
+      console.error('Error getting contextual data:', error);
+    }
+
+    return contextData;
+  };
+
+  // Call Gemini AI with context
+  const callGeminiAI = async (userMessage, contextData) => {
+    try {
+      const systemPrompt = `You are an intelligent admin assistant for "Upcycled Streetwear", a sustainable fashion e-commerce platform with bidding features. 
+
+CONTEXT DATA:
+- Total Customers: ${contextData.stats.totalCustomers}
+- Total Orders: ${contextData.stats.totalOrders}
+- Total Products: ${contextData.stats.totalProducts}
+- Monthly Revenue: ₱${contextData.stats.monthlyRevenue.toLocaleString()}
+- Today's Revenue: ₱${contextData.stats.todayRevenue.toLocaleString()}
+- Today's Orders: ${contextData.stats.todayOrders}
+- Pending Orders: ${contextData.stats.pendingOrders}
+- Available Items: ${contextData.stats.availableItems}
+- Sold Items: ${contextData.stats.soldItems}
+- Top Products: ${contextData.stats.topProducts.map(p => `${p.name} (${p.sales} orders)`).join(', ')}
+
+DATABASE STRUCTURE NOTES:
+- Orders use 'date' field (not createdAt), 'price' field (not total), single product per order
+- Products can have bidding enabled with bids array, status: 'sold' or 'available'
+- Users have detailed profiles with firstName, lastName, middleName, totalOrders, totalSpent
+- News items have mainImage and secondaryImages arrays
+
+${contextData.recentOrders ? `RECENT ORDERS: ${JSON.stringify(contextData.recentOrders.slice(0, 5).map(order => ({
+  id: order.id.slice(-6),
+  customer: order.customerName,
+  product: order.product,
+  price: order.price,
+  status: order.status,
+  address: order.address,
+  date: order.date
+})))}` : ''}
+
+${contextData.customers ? `CUSTOMERS: ${JSON.stringify(contextData.customers.slice(0, 5).map(user => ({
+  name: user.name,
+  email: user.email,
+  status: user.status,
+  totalOrders: user.totalOrders,
+  totalSpent: user.totalSpent,
+  joinDate: user.joinDate
+})))}` : ''}
+
+${contextData.products ? `PRODUCTS: ${JSON.stringify(contextData.products.slice(0, 10).map(product => ({
+  name: product.name,
+  price: product.price,
+  status: product.status,
+  category: product.category,
+  condition: product.condition,
+  biddingEnabled: product.biddingEnabled,
+  currentBid: product.currentBid,
+  highestBidder: product.highestBidder
+})))}` : ''}
+
+${contextData.biddingProducts ? `BIDDING PRODUCTS: ${JSON.stringify(contextData.biddingProducts)}` : ''}
+${contextData.soldProducts ? `SOLD PRODUCTS: ${JSON.stringify(contextData.soldProducts.slice(0, 5))}` : ''}
+${contextData.news ? `NEWS: ${JSON.stringify(contextData.news.map(news => ({
+  title: news.title,
+  description: news.description,
+  createdAt: news.createdAt
+})))}` : ''}
+
+GUIDELINES:
+1. Provide specific, actionable insights based on the data
+2. Use emojis and formatting for better readability
+3. Always include relevant numbers and statistics from actual data
+4. Suggest specific actions the admin can take
+5. Be conversational but professional
+6. Handle bidding system questions (current bids, bid winners, etc.)
+7. Address single-product-per-order structure in analysis
+8. Keep responses concise but informative (max 300 words)
+9. Format currency in Philippine Peso (₱)
+10. Consider the customer lifecycle: new users, active buyers, etc.
+
+USER QUERY: ${userMessage}
+
+Respond as the admin assistant with specific data-driven insights:`;
+
+      const response = await fetch(GEMINI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: systemPrompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 512,
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.candidates[0].content.parts[0].text;
+    } catch (error) {
+      console.error('Gemini API Error:', error);
+      throw error;
     }
   };
 
   const sendMessage = async () => {
     if (!inputText.trim()) return;
 
+    // Check if API key is configured
+    if (GEMINI_API_KEY === "YOUR_GEMINI_API_KEY_HERE") {
+      const errorMessage = {
+        id: Date.now() + 1,
+        text: "⚠️ Please configure your Gemini API key in the environment variables (REACT_APP_GEMINI_API_KEY) to enable AI features. Get your free API key at: https://makersuite.google.com/app/apikey",
+        sender: "bot",
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      return;
+    }
+
     try {
       setLoading(true);
       setIsBotTyping(true);
 
-      // Save user message
+      // Add user message
       const userMessage = {
         id: Date.now(),
         text: inputText,
@@ -289,12 +401,15 @@ Just ask naturally! Example: "Show me this month's sales" or "Any low stock item
         timestamp: new Date(),
       };
 
-      const updatedMessages = [...messages, userMessage];
-      setMessages(updatedMessages);
+      setMessages(prev => [...prev, userMessage]);
+      const currentInput = inputText;
       setInputText("");
 
-      // Get admin AI response with database queries
-      const aiResponse = await getAdminResponse(inputText);
+      // Get contextual data based on user query
+      const contextData = await getContextualData(currentInput);
+
+      // Call Gemini AI
+      const aiResponse = await callGeminiAI(currentInput, contextData);
       
       const botMessage = {
         id: Date.now() + 1,
@@ -304,11 +419,22 @@ Just ask naturally! Example: "Show me this month's sales" or "Any low stock item
       };
       
       setMessages(prev => [...prev, botMessage]);
-    } catch (err) {
-      console.error("Error:", err);
+
+    } catch (error) {
+      console.error("AI Error:", error);
+      let errorText = "I'm having trouble processing your request right now. ";
+      
+      if (error.message.includes('API key')) {
+        errorText += "Please check your API key configuration.";
+      } else if (error.message.includes('quota')) {
+        errorText += "API quota exceeded. Please try again later.";
+      } else {
+        errorText += "Please try again in a moment.";
+      }
+
       const errorMessage = {
         id: Date.now() + 1,
-        text: "Sorry, I'm having trouble accessing the admin system right now. Please try again.",
+        text: errorText,
         sender: "bot",
         timestamp: new Date(),
       };
@@ -320,11 +446,11 @@ Just ask naturally! Example: "Show me this month's sales" or "Any low stock item
   };
 
   const quickAdminActions = [
-    { text: "Show today's sales", icon: <DollarSign size={16} /> },
-    { text: "Pending orders status", icon: <ShoppingBag size={16} /> },
-    { text: "Low stock items", icon: <Package size={16} /> },
-    { text: "Customer management", icon: <Users size={16} /> },
-    { text: "Schedule item drop", icon: <Calendar size={16} /> },
+    { text: "Show today's sales performance", icon: <DollarSign size={16} /> },
+    { text: "What orders need immediate attention?", icon: <AlertTriangle size={16} /> },
+    { text: "Which products are running low on stock?", icon: <Package size={16} /> },
+    { text: "Show me customer insights this week", icon: <Users size={16} /> },
+    { text: "Help me plan a new product announcement", icon: <Calendar size={16} /> },
   ];
 
   const sendQuickAction = (action) => {
@@ -338,16 +464,21 @@ Just ask naturally! Example: "Show me this month's sales" or "Any low stock item
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="w-16 h-16 bg-green-600 hover:bg-green-700 text-white rounded-full shadow-lg flex items-center justify-center transition-all duration-300 hover:scale-110"
+          className="w-16 h-16 bg-green-600 hover:bg-green-700 text-white rounded-full shadow-lg flex items-center justify-center transition-all duration-300 hover:scale-110 relative"
           style={{ backgroundColor: '#135918' }}
         >
           <MessageCircle size={24} />
+          {adminStats.pendingOrders > 0 && (
+            <div className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+              {adminStats.pendingOrders}
+            </div>
+          )}
         </button>
       )}
 
       {/* Chat Modal */}
       {isOpen && (
-        <div className="bg-white rounded-2xl shadow-2xl w-96 h-96 flex flex-col border-2 border-green-100"
+        <div className="bg-white rounded-2xl shadow-2xl w-96 h-[500px] flex flex-col border-2 border-green-100"
              style={{ backgroundColor: '#FFFEF7' }}>
           {/* Header */}
           <div className="p-4 rounded-t-2xl flex items-center justify-between"
@@ -357,8 +488,8 @@ Just ask naturally! Example: "Show me this month's sales" or "Any low stock item
                 <BarChart3 size={16} className="text-white" />
               </div>
               <div>
-                <h3 className="text-white font-semibold text-sm">Admin Assistant</h3>
-                <p className="text-green-100 text-xs">Upcycled Streetwear</p>
+                <h3 className="text-white font-semibold text-sm">AI Admin Assistant</h3>
+                <p className="text-green-100 text-xs">Powered by Gemini AI</p>
               </div>
             </div>
             <button
@@ -369,19 +500,30 @@ Just ask naturally! Example: "Show me this month's sales" or "Any low stock item
             </button>
           </div>
 
-          {/* Quick Stats Bar */}
-          <div className="px-4 py-2 bg-green-50 border-b border-green-100">
-            <div className="grid grid-cols-3 gap-2 text-xs">
+          {/* Enhanced Stats Bar */}
+          <div className="px-4 py-3 bg-green-50 border-b border-green-100">
+            <div className="grid grid-cols-4 gap-2 text-xs">
               <div className="text-center">
-                <div className="font-semibold text-green-800">{adminStats.totalCustomers}</div>
-                <div className="text-green-600">Customers</div>
+                <div className="font-bold text-green-800">{adminStats.todayOrders}</div>
+                <div className="text-green-600">Today</div>
               </div>
               <div className="text-center">
-                <div className="font-semibold text-green-800">{adminStats.pendingOrders}</div>
+                <div className="font-bold text-green-800 flex items-center justify-center gap-1">
+                  {adminStats.pendingOrders}
+                  {adminStats.pendingOrders > 0 && <Clock size={10} className="text-orange-500" />}
+                </div>
                 <div className="text-green-600">Pending</div>
               </div>
               <div className="text-center">
-                <div className="font-semibold text-green-800">₱{adminStats.monthlyRevenue.toLocaleString()}</div>
+                <div className="font-bold text-green-800">{adminStats.availableItems}</div>
+                <div className="text-green-600">Available</div>
+              </div>
+              <div className="text-center">
+                <div className="font-bold text-green-800">{adminStats.soldItems}</div>
+                <div className="text-green-600">Sold</div>
+              </div>
+              <div className="text-center">
+                <div className="font-bold text-green-800">₱{(adminStats.todayRevenue / 1000).toFixed(1)}k</div>
                 <div className="text-green-600">Revenue</div>
               </div>
             </div>
@@ -422,7 +564,7 @@ Just ask naturally! Example: "Show me this month's sales" or "Any low stock item
             {/* Quick Actions */}
             {messages.length <= 1 && (
               <div className="mt-4">
-                <p className="text-xs text-gray-500 mb-2">Quick Actions:</p>
+                <p className="text-xs text-gray-500 mb-2">Quick Questions:</p>
                 <div className="space-y-2">
                   {quickAdminActions.map((action, index) => (
                     <button
@@ -447,8 +589,8 @@ Just ask naturally! Example: "Show me this month's sales" or "Any low stock item
               <textarea
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Ask about orders, customers, sales..."
-                className="flex-1 px-3 py-2 text-sm border border-green-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-green-300 bg-white"
+                placeholder="Ask anything about your business..."
+                className="flex-1 px-3 py-2 text-sm border border-green-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-green-300 bg-white max-h-20"
                 rows="1"
                 onKeyPress={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
