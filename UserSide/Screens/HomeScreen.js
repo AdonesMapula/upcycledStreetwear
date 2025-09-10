@@ -14,29 +14,39 @@ export default function HomeScreen({ navigation }) {
   const { currentUser, isLoading } = useAuth()
   const user = currentUser || null
 
+  console.log('HomeScreen - currentUser object:', currentUser)
+  console.log('HomeScreen - user.firstName:', user?.firstName)
+
   
   console.log("[v0] HomeScreen - User data:", user)
 
-  const getUserFirstName = () => {
-    if (!user) {
-      console.log("[v0] No user data available")
-      return "User"
-    }
-
-    if (user.firstName) {
-      return user.firstName
-    }
-
-    if (user.name) {
-      return user.name.split(" ")[0]
-    }
-
-    if (user.email) {
-      return user.email.split("@")[0]
-    }
-
+const getUserFirstName = () => {
+  console.log('HomeScreen getting first name from:', user?.firstName) // Debug line
+  
+  if (!user) {
+    console.log("No user data available")
     return "User"
   }
+
+  if (user.firstName) {
+    console.log('HomeScreen found firstName:', user.firstName)
+    return user.firstName
+  }
+
+  if (user.name) {
+    const firstName = user.name.split(" ")[0]
+    console.log('HomeScreen using name split:', firstName)
+    return firstName
+  }
+
+  if (user.email) {
+    const emailName = user.email.split("@")[0]
+    console.log('HomeScreen fallback to email:', emailName)
+    return emailName
+  }
+
+  return "User"
+}
 
   if (isLoading) {
   return (
@@ -118,8 +128,8 @@ export default function HomeScreen({ navigation }) {
       {/* Featured Items */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Featured Auctions</Text>
-          <TouchableOpacity onPress={() => navigation.navigate("Featured")}>
+          <Text style={styles.sectionTitle}>Featured Bidding</Text>
+          <TouchableOpacity onPress={() => navigation.navigate("Bidding")}>
             <Text style={styles.seeAllText}>See All</Text>
           </TouchableOpacity>
         </View>

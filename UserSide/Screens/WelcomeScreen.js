@@ -27,6 +27,9 @@ export default function WelcomeScreen({ navigation }) {
   // Get auth context for onboarding
   const { setHasCompletedAppOnboarding, currentUser } = useAuth()
 
+  console.log('WelcomeScreen - currentUser object:', currentUser)
+  console.log('WelcomeScreen - currentUser.firstName:', currentUser?.firstName)
+
   // Animation values
   const [fadeAnim] = useState(new Animated.Value(0))
   const [slideUpAnim] = useState(new Animated.Value(50))
@@ -48,18 +51,25 @@ export default function WelcomeScreen({ navigation }) {
 
     useEffect(() => {
       // Set personalized welcome text
-      const getFirstName = () => {
-        if (currentUser?.firstName) {
-          return currentUser.firstName
+        const getFirstName = () => {
+          console.log('Getting first name from:', currentUser) // Debug line
+          
+          if (currentUser?.firstName) {   
+            console.log('Found firstName:', currentUser.firstName)
+            return currentUser.firstName
+          }
+          if (currentUser?.name) {
+            const firstName = currentUser.name.split(' ')[0]
+            console.log('Using name split:', firstName)
+            return firstName
+          }
+          if (currentUser?.email) {
+            const emailName = currentUser.email.split('@')[0]
+            console.log('Fallback to email:', emailName)
+            return emailName
+          }
+          return 'there'
         }
-        if (currentUser?.name) {
-          return currentUser.name.split(' ')[0]
-        }
-        if (currentUser?.email) {
-          return currentUser.email.split('@')[0]
-        }
-        return 'there'
-      }
 
       const userName = getFirstName()
   

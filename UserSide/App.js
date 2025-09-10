@@ -33,6 +33,7 @@ import BiddingScreen from "./Screens/BiddingScreen"
 import ProfileScreen from "./Screens/ProfileScreen"
 import CartScreen from "./Screens/CartScreen"
 import UpcycledUserAssistant from "./Screens/UpcycledUserAssistant"
+import CheckoutScreen from "./Screens/CheckoutScreen"
 
 
 // Import your NavBarLayout
@@ -144,6 +145,14 @@ function MainAppStack() {
         {(props) => (
           <NavBarLayout>
             <CartScreen {...props} />
+          </NavBarLayout>
+        )}
+      </Stack.Screen>
+
+      <Stack.Screen name="Checkout">
+        {(props) => (
+          <NavBarLayout>
+            <CheckoutScreen {...props} />
           </NavBarLayout>
         )}
       </Stack.Screen>

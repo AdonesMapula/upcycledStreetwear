@@ -31,7 +31,7 @@ export const AuthProvider = ({ children }) => {
 
         if (user) {
           try {
-            const userDocRef = doc(db, "customers", user.uid)
+            const userDocRef = doc(db, "users", user.uid)
             const userDocSnap = await getDoc(userDocRef)
 
             if (userDocSnap.exists()) {
@@ -158,7 +158,7 @@ export const AuthProvider = ({ children }) => {
       // Save to Firestore if user is logged in
       if (currentUser?.uid) {
         try {
-          const userDocRef = doc(db, "customers", currentUser.uid)
+          const userDocRef = doc(db, "users", currentUser.uid)
           await updateDoc(userDocRef, {
             hasCompletedAppOnboarding: completed,
             appOnboardingCompletedAt: completed ? new Date() : null
@@ -183,7 +183,7 @@ export const AuthProvider = ({ children }) => {
       // Update Firestore if possible
       if (currentUser?.uid) {
         try {
-          const userDocRef = doc(db, "customers", currentUser.uid)
+          const userDocRef = doc(db, "users", currentUser.uid)
           await updateDoc(userDocRef, {
             hasCompletedAppOnboarding: false,
             appOnboardingCompletedAt: null

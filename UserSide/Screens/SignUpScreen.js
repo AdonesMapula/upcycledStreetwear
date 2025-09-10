@@ -26,7 +26,6 @@ export default function SignUpScreen({ navigation }) {
   const [email, setEmail] = useState("")
   const [firstName, setFirstName] = useState("")
   const [middleName, setMiddleName] = useState("")
-
   const [lastName, setLastName] = useState("")
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
@@ -145,9 +144,9 @@ export default function SignUpScreen({ navigation }) {
     setLastName(capitalizeWords(text))
   }
 
-    const handleMiddleNameChange = (text) => {
-      setMiddleName(capitalizeWords(text))
-    }
+  const handleMiddleNameChange = (text) => {
+    setMiddleName(capitalizeWords(text))
+  }
 
   const handlePhoneChange = (text) => {
     const formatted = formatPhoneNumber(text)
@@ -199,12 +198,11 @@ export default function SignUpScreen({ navigation }) {
         ? `${firstName} ${middleName} ${lastName}`
         : `${firstName} ${lastName}`
 
-
-      // Save additional user data in Firestore
+      // Save additional user data in Firestore - FIXED: Now properly saving firstName separately
       await setDoc(doc(db, "users", user.uid), {
         name: fullName,
         email,
-        firstName,
+        firstName,        // This is the key fix - saving firstName as separate field
         middleName: middleName || "",
         lastName,
         phone: phone.replace(/\D/g, ''), // Store phone without formatting
@@ -216,6 +214,8 @@ export default function SignUpScreen({ navigation }) {
         lastOrder: "Never",
         preferences: [],
       })
+
+      console.log("User data saved successfully with firstName:", firstName) // Debug log
 
       Alert.alert("Success", "Account created successfully! Please sign in.")
       navigation.navigate("SignIn")

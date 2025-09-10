@@ -20,9 +20,26 @@ const Login = () => {
 
     try {
       await signInWithEmailAndPassword(auth, email, password)
+      // Login successful - user will be redirected by auth state change
     } catch (error) {
-      setError("Invalid email or password. Please try again.")
       console.error("Login error:", error)
+      
+      // Provide more specific error messages
+      switch (error.code) {
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+          setError("Invalid email or password. Please check your credentials.")
+          break
+        case 'auth/too-many-requests':
+          setError("Too many failed attempts. Please try again later.")
+          break
+        case 'auth/user-disabled':
+          setError("This account has been disabled. Please contact support.")
+          break
+        default:
+          setError("Login failed. Please try again.")
+      }
     } finally {
       setLoading(false)
     }

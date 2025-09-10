@@ -4,12 +4,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  Animated,
+  FlatList,
+  StyleSheet,
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  Alert,
   ActivityIndicator,
+  Animated
 } from 'react-native';
 import {
   getFirestore,
@@ -21,31 +23,42 @@ import {
   getDocs,
   where,
   limit,
+  doc,
+  updateDoc,
+  deleteDoc,
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
-import Icon from 'react-native-vector-icons/Feather';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 
 const { width, height } = Dimensions.get('window');
 
-const UpcycledUserAssistant = () => {
+const UpcycledUserAssistant = ({ userId, userProfile }) => {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isBotTyping, setIsBotTyping] = useState(false);
-  const scrollViewRef = useRef(null);
-  
-  // Animation values
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  
-  // User data states
+  const flatListRef = useRef(null);
+  const slideAnim = useRef(new Animated.Value(height)).current;
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+
+  // User-specific data states
   const [userStats, setUserStats] = useState({
+    activeBids: 0,
+    wonItems: 0,
     totalOrders: 0,
-    pendingClaims: 0,
-    availableCredits: 0,
-    recentActivity: []
+    totalSpent: 0,
+    pendingPayments: 0,
+    favoriteCategories: [],
+    recentlyViewed: [],
+    currentBids: [],
+    recommendedItems: []
   });
+
+  // Your Gemini API key
+  const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY || "AIzaSyAJaYkB3G69TzOWQ66bwVMmlQHR5ug3Jt0";
+  const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
 
   useEffect(() => {
     if (isOpen && messages.length === 0) {
@@ -54,153 +67,329 @@ const UpcycledUserAssistant = () => {
   }, [isOpen]);
 
   useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
+    if (userId) {
+      loadUserStats();
+      const interval = setInterval(loadUserStats, 30000); // Update every 30 seconds
+      return () => clearInterval(interval);
+    }
+  }, [userId]);
 
   useEffect(() => {
-    // Load user statistics when component mounts
-    loadUserStats();
-  }, []);
+    if (isOpen) {
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: height,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isOpen]);
 
-  // Animation effects
   useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: isOpen ? 1 : 0,
-      duration: 300,
+    Animated.spring(scaleAnim, {
+      toValue: isOpen ? 0 : 1,
       useNativeDriver: true,
     }).start();
   }, [isOpen]);
 
   const initializeChat = () => {
+    const userName = userProfile?.firstName || userProfile?.name || 'there';
     const welcomeMessage = {
       id: 1,
-      text: "Hey there! 👋 Welcome to Upcycled Streetwear! I'm here to help you with:\n\n• Finding unique items\n• Claiming procedures\n• Order tracking\n• Account questions\n• Style recommendations\n\nWhat can I help you with today?",
+      text: `Hey ${userName}! 👋 I'm your personal Upcycled Streetwear assistant! I can help you find amazing deals, track your bids, discover trending items, and answer any questions about sustainable fashion. What would you like to explore today?`,
       sender: 'bot',
       timestamp: new Date(),
     };
     setMessages([welcomeMessage]);
   };
 
-  // Load user statistics from database
+  // Load user-specific statistics and data
   const loadUserStats = async () => {
+    if (!userId) return;
+
     try {
-      // User's orders (you'd need to filter by current user ID in real app)
+      // Get user's orders
       const ordersQuery = query(
         collection(db, 'orders'),
-        // where('userId', '==', currentUserId), // Add user filtering
-        orderBy('createdAt', 'desc'),
-        limit(10)
+        where('userId', '==', userId)
       );
       const ordersSnap = await getDocs(ordersQuery);
       
-      let pendingClaims = 0;
+      let totalSpent = 0;
+      let pendingPayments = 0;
+      const categoryCount = {};
+
       ordersSnap.docs.forEach(doc => {
         const orderData = doc.data();
-        if (orderData.status === 'pending' || orderData.status === 'claiming') {
-          pendingClaims++;
+        totalSpent += orderData.price || 0;
+        
+        if (orderData.status === 'pending_payment') {
+          pendingPayments++;
+        }
+
+        if (orderData.category) {
+          categoryCount[orderData.category] = (categoryCount[orderData.category] || 0) + 1;
         }
       });
 
-      // Get available products for browsing
-      const productsQuery = query(
-        collection(db, 'products'),
-        where('quantity', '>', 0),
-        limit(5)
-      );
+      // Get user's active bids
+      const productsQuery = query(collection(db, 'products'));
       const productsSnap = await getDocs(productsQuery);
+      
+      let activeBids = 0;
+      let wonItems = 0;
+      const currentBids = [];
+      const recommendedItems = [];
+
+      productsSnap.docs.forEach(doc => {
+        const productData = doc.data();
+        
+        // Check if user has active bids
+        if (productData.bids && Array.isArray(productData.bids)) {
+          const userBid = productData.bids.find(bid => bid.userId === userId);
+          if (userBid && productData.status === 'available') {
+            activeBids++;
+            currentBids.push({
+              productId: doc.id,
+              productName: productData.name,
+              currentBid: userBid.amount,
+              highestBid: productData.currentBid || 0,
+              isWinning: productData.highestBidder === userId,
+              endTime: productData.biddingEndTime
+            });
+          }
+        }
+
+        // Check won items
+        if (productData.highestBidder === userId && productData.status === 'sold') {
+          wonItems++;
+        }
+
+        // Get recommendations based on user's favorite categories
+        const topCategories = Object.keys(categoryCount).slice(0, 3);
+        if (topCategories.includes(productData.category) && productData.status === 'available') {
+          recommendedItems.push({
+            id: doc.id,
+            name: productData.name,
+            price: productData.price,
+            category: productData.category,
+            currentBid: productData.currentBid || productData.price
+          });
+        }
+      });
+
+      // Get favorite categories
+      const favoriteCategories = Object.entries(categoryCount)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3)
+        .map(([category, count]) => ({ category, count }));
 
       setUserStats({
+        activeBids,
+        wonItems,
         totalOrders: ordersSnap.size,
-        pendingClaims,
-        availableCredits: 1500, // This would come from user profile
-        recentActivity: productsSnap.docs.map(doc => ({
-          id: doc.id,
-          name: doc.data().name,
-          price: doc.data().price
-        }))
+        totalSpent,
+        pendingPayments,
+        favoriteCategories,
+        currentBids: currentBids.slice(0, 5),
+        recommendedItems: recommendedItems.slice(0, 5)
       });
+
     } catch (error) {
-      console.error('Error loading user stats:', error);
+      // console.error('Error loading user stats:', error);
     }
   };
 
-  // Enhanced AI response with user-focused database queries
-  const getUserResponse = async (userMessageText) => {
+  // Get contextual data based on user query
+  const getContextualData = async (userQuery) => {
+    const lowerQuery = userQuery.toLowerCase();
+    let contextData = { stats: userStats };
+
     try {
-      const lowerInput = userMessageText.toLowerCase();
-      
-      // User-focused responses
-      if (lowerInput.includes('order') || lowerInput.includes('track') || lowerInput.includes('status')) {
-        const recentOrdersQuery = query(
-          collection(db, 'orders'),
-          // where('userId', '==', currentUserId), // Filter by user
-          orderBy('createdAt', 'desc'),
-          limit(3)
-        );
-        const ordersSnap = await getDocs(recentOrdersQuery);
-        
-        return `📦 **Your Orders:**\n\n• Total Orders: ${userStats.totalOrders}\n• Pending Claims: ${userStats.pendingClaims}\n\n**Recent Orders:**\n${ordersSnap.docs.map((doc, idx) => {
-          const data = doc.data();
-          return `${idx + 1}. Order #${doc.id.slice(-6)} - ${data.status} - ₱${data.total}`;
-        }).join('\n') || 'No recent orders found.'}\n\nNeed help with a specific order? Just give me the order number!`;
-      }
-
-      if (lowerInput.includes('claim') || lowerInput.includes('how to claim') || lowerInput.includes('claiming')) {
-        return `🎯 **How to Claim Items:**\n\n**Step 1:** Browse available items in the app\n**Step 2:** When you see "CLAIM NOW" - tap it fast!\n**Step 3:** Complete the claiming form\n**Step 4:** Wait for admin approval\n**Step 5:** Proceed to payment\n\n**💡 Pro Tips:**\n• Be ready when drops happen\n• Follow our social media for drop announcements\n• Keywords sometimes trigger special claims\n\n**Current Status:** ${userStats.pendingClaims} pending claims\n\nNeed help with a specific claim?`;
-      }
-
-      if (lowerInput.includes('product') || lowerInput.includes('item') || lowerInput.includes('browse') || lowerInput.includes('shop')) {
-        const availableProductsQuery = query(
+      // Bidding context
+      if (lowerQuery.includes('bid') || lowerQuery.includes('auction') || lowerQuery.includes('winning')) {
+        const productsQuery = query(
           collection(db, 'products'),
-          where('quantity', '>', 0),
+          where('biddingEnabled', '==', true),
+          where('status', '==', 'available'),
+          orderBy('createdAt', 'desc'),
+          limit(10)
+        );
+        const productsSnap = await getDocs(productsQuery);
+        contextData.biddingItems = productsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+      }
+
+      // Order context
+      if (lowerQuery.includes('order') || lowerQuery.includes('purchase') || lowerQuery.includes('bought')) {
+        const ordersQuery = query(
+          collection(db, 'orders'),
+          where('userId', '==', userId),
+          orderBy('date', 'desc'),
+          limit(5)
+        );
+        const ordersSnap = await getDocs(ordersQuery);
+        contextData.userOrders = ordersSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+      }
+
+      // Product discovery context
+      if (lowerQuery.includes('find') || lowerQuery.includes('recommend') || lowerQuery.includes('suggest') || lowerQuery.includes('trending')) {
+        const productsQuery = query(
+          collection(db, 'products'),
+          where('status', '==', 'available'),
+          orderBy('createdAt', 'desc'),
+          limit(15)
+        );
+        const productsSnap = await getDocs(productsQuery);
+        contextData.availableProducts = productsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+      }
+
+      // News context for fashion trends
+      if (lowerQuery.includes('news') || lowerQuery.includes('trend') || lowerQuery.includes('style') || lowerQuery.includes('fashion')) {
+        const newsQuery = query(
+          collection(db, 'news'),
           orderBy('createdAt', 'desc'),
           limit(5)
         );
-        const productsSnap = await getDocs(availableProductsQuery);
-        
-        return `🛍️ **Available Items:**\n\n${productsSnap.docs.map((doc, idx) => {
-          const data = doc.data();
-          return `${idx + 1}. ${data.name} - ₱${data.price}\n   Stock: ${data.quantity} left`;
-        }).join('\n\n') || 'No items currently available - check back soon!'}\n\n💫 **Quick Actions:**\n• "Show me hoodies" - Filter by category\n• "Under ₱1000" - Filter by price\n• "New arrivals" - Latest drops\n\nWhat style are you looking for?`;
-      }
-
-      if (lowerInput.includes('account') || lowerInput.includes('profile') || lowerInput.includes('credit')) {
-        return `👤 **Your Account:**\n\n• Total Orders: ${userStats.totalOrders}\n• Pending Claims: ${userStats.pendingClaims}\n• Available Credits: ₱${userStats.availableCredits}\n• Member Since: Premium User 🌟\n\n**Quick Account Actions:**\n• Update profile info\n• Change password\n• View order history\n• Check claim status\n\nNeed help with account settings?`;
-      }
-
-      if (lowerInput.includes('payment') || lowerInput.includes('gcash') || lowerInput.includes('pay')) {
-        return `💳 **Payment Options:**\n\n**Accepted Methods:**\n• GCash - Instant payment\n• Bank Transfer - 1-2 days processing\n• Credit/Debit Cards - Instant\n• Store Credits - Use accumulated credits\n\n**Payment Process:**\n1. Complete your claim\n2. Wait for admin approval\n3. Receive payment instructions\n4. Submit payment proof\n5. Item ships after verification\n\n**Current Credits:** ₱${userStats.availableCredits}\n\nHaving payment issues?`;
-      }
-
-      if (lowerInput.includes('shipping') || lowerInput.includes('delivery')) {
-        return `🚚 **Shipping Information:**\n\n**Metro Manila:** ₱150 - 1-2 days\n**Provincial:** ₱200-300 - 3-5 days\n**Island Areas:** ₱350+ - 5-7 days\n\n**Shipping Partners:**\n• LBC Express\n• J&T Express  \n• Grab Express (Metro Manila)\n\n**📍 Tracking:**\nOnce shipped, you'll receive tracking details via SMS and app notifications.\n\nNeed to update your shipping address?`;
-      }
-
-      // General user responses
-      const userResponses = {
-        "help": `🆘 **I can help you with:**\n\n📦 **Orders:** "track my order", "order status"\n🎯 **Claims:** "how to claim", "claim status"\n🛍️ **Shopping:** "show products", "new arrivals"\n👤 **Account:** "my account", "credits balance"\n💳 **Payment:** "payment methods", "gcash payment"\n🚚 **Shipping:** "delivery options", "tracking"\n\n**Just ask naturally!** 💬\nExample: "Do you have any hoodies?" or "How do I claim items?"`,
-        
-        "greeting": "Hello! Welcome to Upcycled Streetwear! 🌟 I'm your personal shopping assistant. I can help you find unique pieces, guide you through claiming, track your orders, and answer any questions. What would you like to explore today?",
-        
-        "style": "🎨 **Style Recommendations:**\n\nBased on our trending items:\n• Vintage oversized hoodies\n• Distressed denim jackets  \n• Upcycled graphic tees\n• Sustainable streetwear sets\n\nTell me your style preference:\n• Casual & comfy\n• Edgy & bold\n• Vintage & retro\n• Minimalist & clean\n\nWhat's your vibe?",
-        
-        "default": "I'm here to make your Upcycled Streetwear experience amazing! 🌟 I can help you discover unique pieces, guide you through claiming items, track orders, or answer any questions. What would you like to know more about?"
-      };
-
-      // Determine response type
-      if (lowerInput.includes('help') || lowerInput.includes('what can you')) {
-        return userResponses.help;
-      } else if (lowerInput.includes('hello') || lowerInput.includes('hi') || lowerInput.includes('hey')) {
-        return userResponses.greeting;
-      } else if (lowerInput.includes('style') || lowerInput.includes('recommend') || lowerInput.includes('suggest')) {
-        return userResponses.style;
-      } else {
-        return userResponses.default;
+        const newsSnap = await getDocs(newsQuery);
+        contextData.fashionNews = newsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
       }
 
     } catch (error) {
-      console.error('User AI Error:', error);
-      return "I'm having a little trouble right now 😅 Please try asking again, or let me know if you need immediate help with an order!";
+      // console.error('Error getting contextual data:', error);
+    }
+          try {
+        const q = query(collection(db, "items"), where("active", "==", true));
+        const snapshot = await getDocs(q);
+        // handle snapshot...
+      } catch (error) {
+        // console.warn("Firestore query failed:", error.message);
+        // Or return a fallback value
+      }
+
+    return contextData;
+  };
+
+  // Call Gemini AI with user context
+  const callGeminiAI = async (userMessage, contextData) => {
+    try {
+      const userName = userProfile?.firstName || userProfile?.name || 'there';
+      const systemPrompt = `You are a friendly, enthusiastic personal shopping assistant for "${userName}" on the "Upcycled Streetwear" app - a sustainable fashion marketplace with bidding features.
+
+USER PROFILE:
+- Name: ${userName}
+- Active Bids: ${contextData.stats.activeBids}
+- Items Won: ${contextData.stats.wonItems}
+- Total Orders: ${contextData.stats.totalOrders}
+- Total Spent: ₱${contextData.stats.totalSpent.toLocaleString()}
+- Pending Payments: ${contextData.stats.pendingPayments}
+- Favorite Categories: ${contextData.stats.favoriteCategories.map(c => c.category).join(', ')}
+
+${contextData.stats.currentBids?.length > 0 ? `CURRENT BIDS: ${JSON.stringify(contextData.stats.currentBids.map(bid => ({
+  item: bid.productName,
+  yourBid: bid.currentBid,
+  highestBid: bid.highestBid,
+  winning: bid.isWinning ? 'YES' : 'NO'
+})))}` : ''}
+
+${contextData.biddingItems ? `TRENDING AUCTIONS: ${JSON.stringify(contextData.biddingItems.slice(0, 5).map(item => ({
+  name: item.name,
+  startingBid: item.price,
+  currentBid: item.currentBid || item.price,
+  category: item.category,
+  condition: item.condition,
+  timeLeft: item.biddingEndTime
+})))}` : ''}
+
+${contextData.userOrders ? `RECENT ORDERS: ${JSON.stringify(contextData.userOrders.map(order => ({
+  product: order.product,
+  price: order.price,
+  status: order.status,
+  date: order.date
+})))}` : ''}
+
+${contextData.availableProducts ? `AVAILABLE ITEMS: ${JSON.stringify(contextData.availableProducts.slice(0, 8).map(product => ({
+  name: product.name,
+  price: product.price,
+  category: product.category,
+  condition: product.condition,
+  biddingEnabled: product.biddingEnabled,
+  currentBid: product.currentBid
+})))}` : ''}
+
+${contextData.fashionNews ? `FASHION NEWS: ${JSON.stringify(contextData.fashionNews.map(news => ({
+  title: news.title,
+  description: news.description
+})))}` : ''}
+
+PERSONALITY & GUIDELINES:
+1. Be enthusiastic about sustainable fashion and upcycling 🌿
+2. Use emojis and casual, friendly language
+3. Give personalized recommendations based on user's history
+4. Help with bidding strategies and timing
+5. Explain sustainable fashion benefits
+6. Alert about ending auctions for items they're bidding on
+7. Suggest styling tips and outfit combinations
+8. Keep responses conversational and under 250 words
+9. Use Philippine Peso (₱) for pricing
+10. Encourage eco-friendly shopping habits
+
+SPECIAL FEATURES:
+- Alert if user is losing a bid and suggest action
+- Recommend items similar to their purchase history
+- Notify about flash sales and new arrivals
+- Provide styling advice for purchased items
+- Share sustainability tips and fashion care
+
+USER MESSAGE: ${userMessage}
+
+Respond as their personal shopping buddy with enthusiasm and helpful insights:`;
+
+      const response = await fetch(GEMINI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: systemPrompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.8,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 400,
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.candidates[0].content.parts[0].text;
+    } catch (error) {
+      // console.error('Gemini API Error:', error);
+      // throw error;
     }
   };
 
@@ -211,309 +400,294 @@ const UpcycledUserAssistant = () => {
       setLoading(true);
       setIsBotTyping(true);
 
-      // Save user message
+      // Add user message
       const userMessage = {
         id: Date.now(),
         text: inputText,
-        sender: "user",
+        sender: 'user',
         timestamp: new Date(),
       };
 
-      const updatedMessages = [...messages, userMessage];
-      setMessages(updatedMessages);
+      setMessages(prev => [...prev, userMessage]);
+      const currentInput = inputText;
       setInputText('');
 
-      // Get user AI response with database queries
-      const aiResponse = await getUserResponse(inputText);
-      
-      setTimeout(() => {
-        const botMessage = {
-          id: Date.now() + 1,
-          text: aiResponse,
-          sender: "bot",
-          timestamp: new Date(),
-        };
-        
-        setMessages(prev => [...prev, botMessage]);
-        setIsBotTyping(false);
-        setLoading(false);
-      }, 1500); // Simulate typing delay
+      // Get contextual data
+      const contextData = await getContextualData(currentInput);
 
-    } catch (err) {
-      console.error("Error:", err);
-      const errorMessage = {
+      // Call Gemini AI
+      const aiResponse = await callGeminiAI(currentInput, contextData);
+      
+      const botMessage = {
         id: Date.now() + 1,
-        text: "Oops! Something went wrong 😅 Please try again or contact support if this persists.",
-        sender: "bot",
+        text: aiResponse,
+        sender: 'bot',
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, errorMessage]);
-      setIsBotTyping(false);
+      
+      setMessages(prev => [...prev, botMessage]);
+
+    } catch (error) {
+      // console.error('AI Error:', error);
+      // const errorMessage = {
+      //   id: Date.now() + 1,
+      //   text: "Oops! I'm having trouble right now. But I'm still here to help you find amazing deals! Try asking me about trending items or your current bids! 🛍️",
+      //   sender: 'bot',
+      //   timestamp: new Date(),
+      // };
+      // setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setLoading(false);
+      setIsBotTyping(false);
     }
   };
 
-  const quickUserActions = [
-    { text: "Track my orders", icon: "package" },
-    { text: "How to claim items", icon: "target" },
-    { text: "Show available products", icon: "shopping-bag" },
-    { text: "Payment methods", icon: "credit-card" },
-    { text: "Style recommendations", icon: "heart" },
+  const quickActions = [
+    { text: "What items should I bid on right now?", icon: "gavel" },
+    { text: "Show me trending sustainable fashion", icon: "trending-up" },
+    { text: "Check my winning bids", icon: "emoji-events" },
+    { text: "Find items similar to what I bought", icon: "recommend" },
+    { text: "Any auctions ending soon?", icon: "schedule" },
   ];
 
-  const sendQuickAction = (actionText) => {
-    setInputText(actionText);
+  const sendQuickAction = (action) => {
+    setInputText(action);
     setTimeout(() => sendMessage(), 100);
   };
 
-  const toggleChat = () => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      })
-    ]).start();
-    
-    setIsOpen(!isOpen);
-  };
+  const renderMessage = ({ item }) => (
+    <View style={[
+      styles.messageContainer,
+      item.sender === 'user' ? styles.userMessage : styles.botMessage
+    ]}>
+      <Text style={[
+        styles.messageText,
+        item.sender === 'user' ? styles.userMessageText : styles.botMessageText
+      ]}>
+        {item.text}
+      </Text>
+    </View>
+  );
 
-  const chatTransform = {
-    transform: [
-      {
-        translateY: slideAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [height, 0],
-        }),
-      },
-    ],
-  };
+  const renderQuickAction = ({ item }) => (
+    <TouchableOpacity
+      style={styles.quickActionButton}
+      onPress={() => sendQuickAction(item.text)}
+    >
+      <Icon name={item.icon} size={16} color="#135918" />
+      <Text style={styles.quickActionText}>{item.text}</Text>
+    </TouchableOpacity>
+  );
 
   return (
-    <View style={styles.container} pointerEvents="box-none">
+    <>
       {/* Floating Chat Button */}
-      {!isOpen && (
-        <Animated.View style={[styles.floatingButton, { transform: [{ scale: scaleAnim }] }]}>
-          <TouchableOpacity
-            onPress={toggleChat}
-            style={styles.chatButton}
-            activeOpacity={0.8}
-          >
-            <Icon name="message-circle" size={28} color="white" />
-          </TouchableOpacity>
-        </Animated.View>
-      )}
+      <Animated.View 
+        style={[
+          styles.floatingButton,
+          { transform: [{ scale: scaleAnim }] }
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => setIsOpen(true)}
+          style={styles.chatButton}
+        >
+          <Icon name="chat" size={24} color="white" />
+          {(userStats.activeBids > 0 || userStats.pendingPayments > 0) && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.badgeText}>
+                {userStats.activeBids + userStats.pendingPayments}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* Chat Modal */}
       {isOpen && (
-        <Animated.View style={[styles.chatModal, chatTransform]}>
+        <Animated.View 
+          style={[
+            styles.chatModal,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
+        >
           <KeyboardAvoidingView 
-            style={styles.chatContainer}
+            style={styles.keyboardAvoid}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           >
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerLeft}>
-                <View style={styles.headerIcon}>
-                  <Icon name="message-circle" size={18} color="white" />
+                <View style={styles.avatarContainer}>
+                  <Icon name="shopping-bag" size={16} color="white" />
                 </View>
                 <View>
-                  <Text style={styles.headerTitle}>Upcycled Assistant</Text>
-                  <Text style={styles.headerSubtitle}>Here to help you! 🌟</Text>
+                  <Text style={styles.headerTitle}>Shopping Assistant</Text>
+                  <Text style={styles.headerSubtitle}>AI-Powered Style Guide</Text>
                 </View>
               </View>
               <TouchableOpacity
                 onPress={() => setIsOpen(false)}
                 style={styles.closeButton}
               >
-                <Icon name="x" size={24} color="white" />
+                <Icon name="close" size={24} color="white" />
               </TouchableOpacity>
             </View>
 
-            {/* Quick Stats Bar */}
+            {/* Stats Bar */}
             <View style={styles.statsBar}>
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userStats.totalOrders}</Text>
-                <Text style={styles.statLabel}>Orders</Text>
+                <Text style={styles.statValue}>{userStats.activeBids}</Text>
+                <Text style={styles.statLabel}>Active Bids</Text>
               </View>
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userStats.pendingClaims}</Text>
+                <Text style={styles.statValue}>{userStats.wonItems}</Text>
+                <Text style={styles.statLabel}>Won</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>₱{(userStats.totalSpent / 1000).toFixed(1)}k</Text>
+                <Text style={styles.statLabel}>Spent</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={[styles.statValue, userStats.pendingPayments > 0 && styles.pendingValue]}>
+                  {userStats.pendingPayments}
+                </Text>
                 <Text style={styles.statLabel}>Pending</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>₱{userStats.availableCredits}</Text>
-                <Text style={styles.statLabel}>Credits</Text>
               </View>
             </View>
 
-            {/* Chat Messages */}
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.messagesContainer}
-              contentContainerStyle={styles.messagesContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {messages.map((msg, idx) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.messageWrapper,
-                    msg.sender === 'user' ? styles.userMessageWrapper : styles.botMessageWrapper
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.messageBubble,
-                      msg.sender === 'user' ? styles.userMessage : styles.botMessage
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.messageText,
-                        msg.sender === 'user' ? styles.userMessageText : styles.botMessageText
-                      ]}
-                    >
-                      {msg.text}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-
-              {isBotTyping && (
-                <View style={styles.botMessageWrapper}>
-                  <View style={[styles.messageBubble, styles.botMessage, styles.typingBubble]}>
-                    <View style={styles.typingIndicator}>
-                      <View style={[styles.typingDot, { animationDelay: '0ms' }]} />
-                      <View style={[styles.typingDot, { animationDelay: '150ms' }]} />
-                      <View style={[styles.typingDot, { animationDelay: '300ms' }]} />
+            {/* Messages */}
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item.id.toString()}
+              style={styles.messagesList}
+              onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
+              ListFooterComponent={() => (
+                <View>
+                  {isBotTyping && (
+                    <View style={styles.typingContainer}>
+                      <View style={styles.typingBubble}>
+                        <ActivityIndicator size="small" color="#135918" />
+                        <Text style={styles.typingText}>Thinking...</Text>
+                      </View>
                     </View>
-                  </View>
+                  )}
+                  
+                  {messages.length <= 1 && (
+                    <View style={styles.quickActionsContainer}>
+                      <Text style={styles.quickActionsTitle}>Quick Questions:</Text>
+                      <FlatList
+                        data={quickActions}
+                        renderItem={renderQuickAction}
+                        keyExtractor={(item, index) => index.toString()}
+                        showsVerticalScrollIndicator={false}
+                      />
+                    </View>
+                  )}
                 </View>
               )}
-
-              {/* Quick Actions */}
-              {messages.length <= 1 && (
-                <View style={styles.quickActionsContainer}>
-                  <Text style={styles.quickActionsTitle}>Quick Actions:</Text>
-                  {quickUserActions.map((action, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      onPress={() => sendQuickAction(action.text)}
-                      style={styles.quickActionButton}
-                      activeOpacity={0.7}
-                    >
-                      <Icon name={action.icon} size={16} color="#135918" />
-                      <Text style={styles.quickActionText}>{action.text}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </ScrollView>
+            />
 
             {/* Input Area */}
             <View style={styles.inputContainer}>
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  style={styles.textInput}
-                  value={inputText}
-                  onChangeText={setInputText}
-                  placeholder="Ask me anything about orders, claims, products..."
-                  placeholderTextColor="#999"
-                  multiline
-                  maxLength={500}
-                />
-                <TouchableOpacity
-                  onPress={sendMessage}
-                  disabled={loading || !inputText.trim()}
-                  style={[styles.sendButton, (!inputText.trim() || loading) && styles.sendButtonDisabled]}
-                  activeOpacity={0.7}
-                >
-                  {loading ? (
-                    <ActivityIndicator size="small" color="white" />
-                  ) : (
-                    <Icon name="send" size={18} color="white" />
-                  )}
-                </TouchableOpacity>
-              </View>
+              <TextInput
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder="Ask about bids, trends, or styling tips..."
+                style={styles.textInput}
+                multiline
+                maxLength={500}
+                onSubmitEditing={sendMessage}
+              />
+              <TouchableOpacity
+                onPress={sendMessage}
+                disabled={loading || !inputText.trim()}
+                style={[styles.sendButton, (!inputText.trim() || loading) && styles.sendButtonDisabled]}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <Icon name="send" size={20} color="white" />
+                )}
+              </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
         </Animated.View>
       )}
-    </View>
+    </>
   );
 };
 
-const styles = {
-  container: {
+const styles = StyleSheet.create({
+  assistantContainer: {
+  },
+  floatingButton: {
+    position: 'absolute',
+    bottom: 93,
+    right: 15,
+    zIndex: 1000,
+  },
+  chatButton: {
+    width: 60,
+    height: 60,
+    backgroundColor: '#135918',
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#ff4444',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  chatModal: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1000,
-  },
-  floatingButton: {
-    position: 'absolute',
-    bottom: 30,
-    right: 20,
-    zIndex: 1001,
-  },
-  chatButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#135918',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  chatModal: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: height * 0.7,
     backgroundColor: '#FFFEF7',
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    elevation: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -5 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
+    zIndex: 999,
   },
-  chatContainer: {
+  keyboardAvoid: {
     flex: 1,
   },
   header: {
-    backgroundColor: '#135918',
-    paddingTop: 15,
-    paddingHorizontal: 20,
-    paddingBottom: 15,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
+    backgroundColor: '#135918',
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 15,
+    paddingHorizontal: 20,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  headerIcon: {
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  avatarContainer: {
+    width: 32,
+    height: 32,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -521,154 +695,152 @@ const styles = {
   headerTitle: {
     color: 'white',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   headerSubtitle: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255,255,255,0.8)',
     fontSize: 12,
   },
   closeButton: {
     padding: 5,
   },
   statsBar: {
+    flexDirection: 'row',
     backgroundColor: '#f0f9f0',
     paddingVertical: 12,
     paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0f0e0',
+    borderBottomColor: '#e0e0e0',
   },
   statItem: {
+    flex: 1,
     alignItems: 'center',
   },
-  statNumber: {
+  statValue: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: '#135918',
   },
+  pendingValue: {
+    color: '#ff8800',
+  },
   statLabel: {
-    fontSize: 11,
-    color: '#4a7c59',
+    fontSize: 10,
+    color: '#666',
     marginTop: 2,
   },
-  messagesContainer: {
+  messagesList: {
     flex: 1,
+    paddingHorizontal: 15,
+    paddingTop: 15,
   },
-  messagesContent: {
-    padding: 20,
-    paddingBottom: 10,
-  },
-  messageWrapper: {
+  messageContainer: {
     marginBottom: 12,
-  },
-  userMessageWrapper: {
-    alignItems: 'flex-end',
-  },
-  botMessageWrapper: {
-    alignItems: 'flex-start',
-  },
-  messageBubble: {
     maxWidth: '80%',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
   },
   userMessage: {
-    backgroundColor: '#135918',
-    borderBottomRightRadius: 5,
+    alignSelf: 'flex-end',
   },
   botMessage: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#e0f0e0',
-    borderBottomLeftRadius: 5,
+    alignSelf: 'flex-start',
   },
   messageText: {
     fontSize: 14,
     lineHeight: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 18,
   },
   userMessageText: {
+    backgroundColor: '#135918',
     color: 'white',
+    borderBottomRightRadius: 5,
   },
   botMessageText: {
+    backgroundColor: '#f5f5f5',
     color: '#333',
+    borderBottomLeftRadius: 5,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  typingContainer: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
   },
   typingBubble: {
-    paddingVertical: 16,
-  },
-  typingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 18,
+    borderBottomLeftRadius: 5,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
-  typingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4a7c59',
-    marginHorizontal: 2,
-    // Add animation here if needed
+  typingText: {
+    marginLeft: 8,
+    color: '#135918',
+    fontSize: 14,
   },
   quickActionsContainer: {
     marginTop: 15,
+    marginBottom: 10,
   },
   quickActionsTitle: {
     fontSize: 12,
     color: '#666',
     marginBottom: 10,
-    fontWeight: '500',
+    marginLeft: 5,
   },
   quickActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f0f9f0',
-    borderWidth: 1,
-    borderColor: '#d0e7d0',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    padding: 12,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
   },
   quickActionText: {
-    marginLeft: 10,
-    fontSize: 13,
+    marginLeft: 8,
+    fontSize: 12,
     color: '#135918',
-    fontWeight: '500',
+    flex: 1,
   },
   inputContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#e0f0e0',
-    backgroundColor: '#FFFEF7',
-  },
-  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    backgroundColor: 'white',
   },
   textInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#d0e7d0',
-    borderRadius: 15,
+    borderColor: '#d0d0d0',
+    borderRadius: 20,
     paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 14,
-    backgroundColor: 'white',
-    maxHeight: 100,
+    paddingVertical: 10,
     marginRight: 10,
+    maxHeight: 80,
+    fontSize: 14,
+    backgroundColor: '#fafafa',
   },
   sendButton: {
     backgroundColor: '#135918',
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
+    borderRadius: 20,
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
   sendButtonDisabled: {
     opacity: 0.5,
   },
-};
+});
 
 export default UpcycledUserAssistant;

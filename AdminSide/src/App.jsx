@@ -62,7 +62,7 @@ function App() {
             <Route path="/news" element={<NewsManagement />} />
             <Route path="/orders" element={<OrderManagement />} />
             <Route path="/sales" element={<SalesAnalytics />} />
-            <Route path="/customers" element={<CustomerManagement />} />
+            <Route path="/customers" element={<CustomerManagement />} />  
           </Routes>
         </main>
       </div>

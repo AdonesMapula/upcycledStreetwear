@@ -13,7 +13,7 @@ const firebaseConfig = {
   storageBucket: "upcycled-streetwear.firebasestorage.app",
   messagingSenderId: "410226515488",
   appId: "1:410226515488:web:3a8bbbaf054bb2eefea645",
-  measurementId: "G-QLQY51HR40",
+  measurementId: "G-QLQY51HR40"
 };
 
 // Initialize Firebase app (check if already initialized to avoid errors)

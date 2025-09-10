@@ -53,18 +53,43 @@ const SalesAnalytics = () => {
     }
   };
 
+  // Helper function to format Firebase Timestamp
+  const formatDate = (dateField) => {
+    if (!dateField) return 'N/A';
+    
+    // Check if it's a Firebase Timestamp
+    if (dateField && typeof dateField === 'object' && dateField.seconds) {
+      return new Date(dateField.seconds * 1000).toLocaleDateString();
+    }
+    
+    // Check if it's already a Date object
+    if (dateField instanceof Date) {
+      return dateField.toLocaleDateString();
+    }
+    
+    // If it's a string, try to parse it
+    if (typeof dateField === 'string') {
+      const date = new Date(dateField);
+      return isNaN(date.getTime()) ? dateField : date.toLocaleDateString();
+    }
+    
+    return 'Invalid Date';
+  };
+
   const calculateStats = () => {
-    const totalSales = salesData.reduce((sum, sale) => sum + sale.price, 0);
+    const totalSales = salesData.reduce((sum, sale) => sum + (sale.price || 0), 0);
     const totalOrders = salesData.length;
     const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
     
     const statusCounts = salesData.reduce((acc, sale) => {
-      acc[sale.status] = (acc[sale.status] || 0) + 1;
+      const status = sale.status || 'unknown';
+      acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {});
 
     const categorySales = salesData.reduce((acc, sale) => {
-      acc[sale.category] = (acc[sale.category] || 0) + sale.price;
+      const category = sale.category || 'uncategorized';
+      acc[category] = (acc[category] || 0) + (sale.price || 0);
       return acc;
     }, {});
 
@@ -80,7 +105,7 @@ const SalesAnalytics = () => {
   const stats = calculateStats();
 
   const formatPrice = (price) => {
-    return `₱${price.toLocaleString()}`;
+    return `₱${(price || 0).toLocaleString()}`;
   };
 
   const getStatusColor = (status) => {
@@ -91,6 +116,8 @@ const SalesAnalytics = () => {
         return 'bg-yellow-100 text-yellow-800';
       case 'steal':
         return 'bg-red-100 text-red-800';
+      case 'confirmed':
+        return 'bg-green-100 text-green-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -107,7 +134,7 @@ const SalesAnalytics = () => {
       case 'confirmed':
         return '📦';
       default:
-        return '❌';
+        return '❓';
     }
   };
 
@@ -246,7 +273,7 @@ const SalesAnalytics = () => {
                   </div>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(status)}`}>
-                  {((count / stats.totalOrders) * 100).toFixed(1)}%
+                  {stats.totalOrders > 0 ? ((count / stats.totalOrders) * 100).toFixed(1) : 0}%
                 </span>
               </div>
             ))}
@@ -265,7 +292,7 @@ const SalesAnalytics = () => {
                     <p className="text-sm text-gray-600">{formatPrice(sales)}</p>
                   </div>
                   <span className="text-sm font-medium text-primary">
-                    {((sales / stats.totalSales) * 100).toFixed(1)}%
+                    {stats.totalSales > 0 ? ((sales / stats.totalSales) * 100).toFixed(1) : 0}%
                   </span>
                 </div>
               ))}
@@ -293,20 +320,28 @@ const SalesAnalytics = () => {
               </tr>
             </thead>
             <tbody>
-              {salesData.map((sale) => (
-                <tr key={sale.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-3 px-4 text-gray-600">{sale.date}</td>
-                  <td className="py-3 px-4 font-medium">{sale.customer}</td>
-                  <td className="py-3 px-4">{sale.product}</td>
-                  <td className="py-3 px-4 text-gray-600">{sale.category}</td>
-                  <td className="py-3 px-4 font-medium text-primary">{formatPrice(sale.price)}</td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(sale.status)}`}>
-                      {sale.status.toUpperCase()}
-                    </span>
+              {salesData.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="py-8 px-4 text-center text-gray-500">
+                    No sales data available
                   </td>
                 </tr>
-              ))}
+              ) : (
+                salesData.map((sale) => (
+                  <tr key={sale.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-3 px-4 text-gray-600">{formatDate(sale.date || sale.createdAt || sale.timestamp)}</td>
+                    <td className="py-3 px-4 font-medium">{sale.customer || sale.customerName || 'N/A'}</td>
+                    <td className="py-3 px-4">{sale.product || sale.productName || 'N/A'}</td>
+                    <td className="py-3 px-4 text-gray-600">{sale.category || 'N/A'}</td>
+                    <td className="py-3 px-4 font-medium text-primary">{formatPrice(sale.price)}</td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(sale.status || 'unknown')}`}>
+                        {(sale.status || 'UNKNOWN').toUpperCase()}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -323,7 +358,11 @@ const SalesAnalytics = () => {
               </div>
               <div>
                 <p className="font-medium text-secondary">Best Performing Category</p>
-                <p className="text-sm text-gray-600">Jackets are your top seller with 40% of total sales</p>
+                <p className="text-sm text-gray-600">
+                  {Object.entries(stats.categorySales).length > 0 
+                    ? `${Object.entries(stats.categorySales).sort(([,a], [,b]) => b - a)[0][0]} is your top seller`
+                    : 'No category data available'}
+                </p>
               </div>
             </div>
             <div className="flex items-start space-x-3">
@@ -332,7 +371,11 @@ const SalesAnalytics = () => {
               </div>
               <div>
                 <p className="font-medium text-secondary">Customer Preference</p>
-                <p className="text-sm text-gray-600">"Mine" status items have highest conversion rate</p>
+                <p className="text-sm text-gray-600">
+                  {Object.entries(stats.statusCounts).length > 0
+                    ? `"${Object.entries(stats.statusCounts).sort(([,a], [,b]) => b - a)[0][0]}" status items are most popular`
+                    : 'No status data available'}
+                </p>
               </div>
             </div>
             <div className="flex items-start space-x-3">

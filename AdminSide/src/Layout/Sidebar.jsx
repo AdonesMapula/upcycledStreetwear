@@ -12,8 +12,8 @@ const Sidebar = () => {
 
   const menuItems = [
     { path: "/", icon: LayoutDashboard, label: "Dashboard" },
-    { path: "/products", icon: Package, label: "Products" },
     { path: "/news", icon: Newspaper, label: "News" },
+    { path: "/products", icon: Package, label: "Products" },
     { path: '/orders', icon: ClipboardList, label: 'Orders' },
     { path: "/sales", icon: TrendingUp, label: "Sales Analytics" },
     { path: "/customers", icon: Users, label: "Customers" },

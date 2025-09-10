@@ -1,4 +1,3 @@
-
 import React, { useCallback, useState } from "react"
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator } from "react-native"
 import { useNavigation, useRoute } from "@react-navigation/native"
@@ -15,7 +14,7 @@ const tabs = [
   { name: "Profile", icon: "account", route: "Profile" },
 ]
 
-function NavBarLayout({ children }) {
+function NavBarLayout({ children, cartItemCount = 0 }) {
   const navigation = useNavigation()
   const route = useRoute()
   const [isNavigating, setIsNavigating] = useState(false)
@@ -38,6 +37,19 @@ function NavBarLayout({ children }) {
     [navigation, route.name, isNavigating],
   )
 
+  // Function to render notification badge
+  const renderNotificationBadge = (count) => {
+    if (count <= 0) return null
+    
+    return (
+      <View style={styles.notificationBadge}>
+        <Text style={styles.badgeText}>
+          {count > 99 ? '99+' : count.toString()}
+        </Text>
+      </View>
+    )
+  }
+
   return (
     <View style={styles.container}>
       {/* Main Content Area */}
@@ -45,12 +57,11 @@ function NavBarLayout({ children }) {
 
       {/* Fixed Bottom Navigation */}
       <View style={styles.bottomNavContainer}>
-        {/* Removed the global indicator */}
-        {/* <View style={[styles.indicator, { left: indicatorPosition }]} /> */}
-
         <View style={styles.bottomNav}>
           {tabs.map((tab) => {
             const isActive = route.name === tab.route
+            const showBadge = tab.name === "Cart" && cartItemCount > 0
+            
             return (
               <TouchableOpacity
                 key={tab.name}
@@ -61,9 +72,11 @@ function NavBarLayout({ children }) {
               >
                 <View style={[styles.iconContainer, isActive && styles.activeIconContainer]}>
                   <MaterialCommunityIcons name={tab.icon} size={22} color={isActive ? "#2E6A2E" : "#888"} />
+                  {/* Notification Badge */}
+                  {showBadge && renderNotificationBadge(cartItemCount)}
                 </View>
                 <Text style={[styles.tabLabel, isActive && styles.activeTabLabel]}>{tab.name}</Text>
-                {/* NEW: Indicator below the text */}
+                {/* Indicator below the text */}
                 {isActive && <View style={styles.activeTextBottomIndicator} />}
               </TouchableOpacity>
             )
@@ -104,8 +117,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 15,
   },
-  // Removed the global indicator style
-  // indicator: { ... },
   bottomNav: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -119,7 +130,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     paddingHorizontal: 4,
-    position: "relative", // Needed for absolute positioning of the new indicator
+    position: "relative",
   },
   iconContainer: {
     width: 36,
@@ -129,6 +140,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 4,
     backgroundColor: "transparent",
+    position: "relative", // Added for badge positioning
   },
   activeIconContainer: {
     backgroundColor: "rgba(46, 106, 46, 0.1)",
@@ -143,15 +155,34 @@ const styles = StyleSheet.create({
     color: "#2E6A2E",
     fontWeight: "700",
   },
-  // NEW STYLE for the indicator below the text
   activeTextBottomIndicator: {
     position: "absolute",
-    bottom: 0, // Position at the very bottom of the tabButton
-    width: "100%", // Adjust width as needed, or make it dynamic based on text width
+    bottom: 0,
+    width: "100%",
     height: 2,
     backgroundColor: "#2E6A2E",
     borderRadius: 2,
-
+  },
+  // New styles for notification badge
+  notificationBadge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    backgroundColor: "#FF4444",
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "white",
+  },
+  badgeText: {
+    color: "white",
+    fontSize: 10,
+    fontWeight: "bold",
+    textAlign: "center",
+    paddingHorizontal: 2,
   },
   loadingOverlay: {
     position: "absolute",
