@@ -123,8 +123,8 @@ const NewsManagement = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[#F9F7F1] p-6">
-            <div className="max-w-7xl mx-auto p-6">
+        <div className="min-h-screen bg-[#F9F7F1] p-6 flex flex-col">
+            <div className="max-w-7xl mx-auto p-6 flex flex-col flex-grow">
                 {/* Header */}
                 <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
                     <div className="flex items-center justify-between">
@@ -163,74 +163,79 @@ const NewsManagement = () => {
                 </div>
 
                 {/* News Grid */}
-                {currentNews.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="flex-grow">
+                    {currentNews.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 h-full items-stretch">
                         {currentNews.map(item => (
-                            <div key={item.id} className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-                                {/* Main Image */}
-                                <div className="relative h-48 bg-gray-100">
-                                    {item.mainImage ? (
-                                        <img
-                                            src={item.mainImage}
-                                            alt={item.title}
-                                            className="w-full h-full object-cover"
-                                        />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center">
-                                            <ImageIcon className="h-12 w-12 text-gray-300" />
-                                        </div>
+                            <div
+                            key={item.id}
+                            className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col h-full"
+                            >
+                            {/* Main Image */}
+                            <div className="relative h-48 bg-gray-100">
+                                {item.mainImage ? (
+                                <img
+                                    src={item.mainImage}
+                                    alt={item.title}
+                                    className="w-full h-full object-cover"
+                                />
+                                ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                    <ImageIcon className="h-12 w-12 text-gray-300" />
+                                </div>
+                                )}
+                            </div>
+
+                            <div className="p-4 flex flex-col flex-1">
+                                <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">{item.title}</h3>
+                                <p className="text-gray-600 text-sm mb-4 line-clamp-3">{item.description}</p>
+                                
+                                {/* Secondary Images Preview */}
+                                {item.secondaryImages && item.secondaryImages.length > 0 && (
+                                <div className="flex space-x-2 mb-4">
+                                    {item.secondaryImages.slice(0, 3).map((img, index) => (
+                                    <img
+                                        key={index}
+                                        src={img}
+                                        alt={`Secondary ${index + 1}`}
+                                        className="w-12 h-12 object-cover rounded-lg"
+                                    />
+                                    ))}
+                                    {item.secondaryImages.length > 3 && (
+                                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                                        <span className="text-xs text-gray-500">+{item.secondaryImages.length - 3}</span>
+                                    </div>
                                     )}
                                 </div>
+                                )}
 
-                                <div className="p-4">
-                                    <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">{item.title}</h3>
-                                    <p className="text-gray-600 text-sm mb-4 line-clamp-3">{item.description}</p>
-                                    
-                                    {/* Secondary Images Preview */}
-                                    {item.secondaryImages && item.secondaryImages.length > 0 && (
-                                        <div className="flex space-x-2 mb-4">
-                                            {item.secondaryImages.slice(0, 3).map((img, index) => (
-                                                <img
-                                                    key={index}
-                                                    src={img}
-                                                    alt={`Secondary ${index + 1}`}
-                                                    className="w-12 h-12 object-cover rounded-lg"
-                                                />
-                                            ))}
-                                            {item.secondaryImages.length > 3 && (
-                                                <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                                                    <span className="text-xs text-gray-500">+{item.secondaryImages.length - 3}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <div className="flex space-x-2">
-                                        <button
-                                            onClick={() => handleEdit(item)}
-                                            className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                                        >
-                                            <Edit className="h-4 w-4" />
-                                            <span>Edit</span>
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(item.id, item)}
-                                            className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            <span>Delete</span>
-                                        </button>
-                                    </div>
+                                <div className="flex space-x-2 mt-auto">
+                                <button
+                                    onClick={() => handleEdit(item)}
+                                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
+                                >
+                                    <Edit className="h-4 w-4" />
+                                    <span>Edit</span>
+                                </button>
+                                <button
+                                    onClick={() => handleDelete(item.id, item)}
+                                    className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    <span>Delete</span>
+                                </button>
                                 </div>
                             </div>
+                            </div>
                         ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-12">
+                        </div>
+                    ) : (
+                        <div className="text-center py-12">
                         <ImageIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                         <p className="text-gray-500">No articles found</p>
+                        </div>
+                    )}
                     </div>
-                )}
 
                 {/* Pagination Controls */}
                 {totalPages > 1 && (

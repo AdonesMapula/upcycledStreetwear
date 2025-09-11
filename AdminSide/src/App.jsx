@@ -6,10 +6,11 @@ import ProductManagement from './components/ProductManagement';
 import SalesAnalytics from './components/SalesAnalytics';
 import CustomerManagement from './components/CustomerManagement';
 import OrderManagement from './components/OrderManagement';
+import NewsManagement from './components/NewsManagement';
+import SoldProducts from './components/SoldProducts';
 import Sidebar from './Layout/Sidebar';
 import { auth } from './firebase/config';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import NewsManagement from './components/NewsManagement';
 import MessageChatbot from './ai/UpcycledAdminAssistant';
 
 // Import the new Alert components and context
@@ -27,16 +28,16 @@ const AppContent = () => {
       setLoading(false);
     });
 
-    // 🚨 Logout when user leaves or refreshes page
-    const handleUnload = () => {
-      signOut(auth);
-    };
-    window.addEventListener("beforeunload", handleUnload);
+    // // 🚨 Logout when user leaves or refreshes page
+    // const handleUnload = () => {
+    //   signOut(auth);
+    // };
+    // window.addEventListener("beforeunload", handleUnload);
 
-    return () => {
-      unsubscribe();
-      window.removeEventListener("beforeunload", handleUnload);
-    };
+    // return () => {
+    //   unsubscribe();
+    //   window.removeEventListener("beforeunload", handleUnload);
+    // };
   }, []);
 
   if (loading) {
@@ -62,6 +63,7 @@ const AppContent = () => {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/products" element={<ProductManagement />} />
+          <Route path="/products/solds" element={<SoldProducts />} /> {/* New Route */}
           <Route path="/news" element={<NewsManagement />} />
           <Route path="/orders" element={<OrderManagement />} />
           <Route path="/sales" element={<SalesAnalytics />} />

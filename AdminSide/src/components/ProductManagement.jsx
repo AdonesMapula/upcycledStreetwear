@@ -29,6 +29,9 @@ import { db, storage } from '../firebase/config';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import ProductsModal from '../modals/ProductsModal';
 import BidManagementModal from '../modals/BidManagementModal';
+import CategoryModal from '../modals/CategoryModal';
+import { useAlert } from "../contexts/alertContext";
+
 
 const ProductManagement = () => {
   // State variables for UI and data management
@@ -45,6 +48,8 @@ const ProductManagement = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false); // New state for category modal
+
 
   // Form data state
   const [formData, setFormData] = useState({
@@ -74,6 +79,32 @@ const ProductManagement = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const updateProductStatusForEndingSoon = async (product) => {
+    try {
+      const now = new Date();
+      const endTime = new Date(product.bidEndTime);
+      const oneHour = 60 * 60 * 1000;
+      if (
+        product.biddingEnabled &&
+        product.status !== 'ending soon' &&
+        endTime - now <= oneHour &&
+        endTime - now > 0
+      ) {
+        await updateDoc(doc(db, 'products', product.id), {
+          status: 'ending soon',
+          updatedAt: new Date(),
+        });
+        setProducts((prevProducts) =>
+          prevProducts.map((p) =>
+            p.id === product.id ? { ...p, status: 'ending soon' } : p
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error updating product status to "ending soon":', error);
+    }
+  };
+
   // --- Firebase Data Fetching and Management ---
   const fetchProducts = async () => {
     setLoading(true);
@@ -98,6 +129,7 @@ const ProductManagement = () => {
     const now = new Date();
     setProducts((prevProducts) =>
       prevProducts.map((product) => {
+        // Check for expired auctions first
         if (
           product.biddingEnabled &&
           product.bidEndTime &&
@@ -111,6 +143,24 @@ const ProductManagement = () => {
             status: 'expired',
             biddingEnabled: false,
           };
+        }
+        // New logic to check for "ending soon" status
+        if (
+          product.biddingEnabled &&
+          product.bidEndTime &&
+          product.status === 'available'
+        ) {
+          const timeLeft = new Date(product.bidEndTime) - now;
+          const oneHourInMillis = 60 * 60 * 1000;
+          
+          // Change status to 'ending soon' if less than 1 hour remains
+          if (timeLeft > 0 && timeLeft < oneHourInMillis) {
+            updateProductStatus(product.id, 'ending soon');
+            return {
+              ...product,
+              status: 'ending soon',
+            };
+          }
         }
         return product;
       })
@@ -506,6 +556,8 @@ const ProductManagement = () => {
         return 'bg-amber-100 text-amber-800 border-amber-200';
       case 'expired':
         return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'ending soon':
+        return 'bg-orange-500 text-white border-orange-600';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
@@ -566,6 +618,15 @@ const ProductManagement = () => {
                 </div>
               </div>
             </div>
+            <div className='pl-60 flex items-center gap-3'>
+            <button
+              onClick={() => setShowCategoryModal(true)} // Set the state to true on click
+              className="bg-[#135918] hover:bg-[#0F4713] text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-200"
+            >
+              <Plus className="h-5 w-5" />
+              <span>Add Category</span>
+            </button>
+          </div>
             <button
               onClick={() => setShowModal(true)}
               className="bg-[#135918] hover:bg-[#0F4713] text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-200"
@@ -635,6 +696,7 @@ const ProductManagement = () => {
                   <option value="sold">Sold</option>
                   <option value="reserved">Reserved</option>
                   <option value="expired">Expired</option>
+                  <option value="ending soon">Ending Soon</option>
                 </select>
               </div>
             </div>
@@ -970,7 +1032,12 @@ const ProductManagement = () => {
             resetForm={resetForm}
           />
         )}
-
+        {showCategoryModal && (
+          <CategoryModal
+            showModal={showCategoryModal}
+            setShowModal={setShowCategoryModal}
+          />
+        )}
         <BidManagementModal
           showBidModal={showBidModal}
           selectedBidProduct={selectedBidProduct}

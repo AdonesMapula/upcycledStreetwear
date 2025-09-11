@@ -1,5 +1,6 @@
-// ProductsModal.jsx
-
+import { useState, useEffect } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { X, Upload, Gavel } from 'lucide-react';
 
 const ProductsModal = ({
@@ -20,6 +21,31 @@ const ProductsModal = ({
   setFormData,
   removeImageUrl
 }) => {
+  const [categories, setCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      setLoadingCategories(true);
+      try {
+        const querySnapshot = await getDocs(collection(db, 'categories'));
+        const categoriesList = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setCategories(categoriesList);
+      } catch (err) {
+        console.error("Failed to fetch categories:", err);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+
+    if (showModal) {
+      fetchCategories();
+    }
+  }, [showModal]);
+
   return (
     showModal && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -43,7 +69,7 @@ const ProductsModal = ({
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Product Images Upload */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3">Product Images</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">Product Images<span className="text-red-500">*</span></label>
                 
                 {/* Drag & Drop Area */}
                 <div
@@ -160,7 +186,9 @@ const ProductsModal = ({
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Product Name</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Product Name <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     value={formData.name}
@@ -172,7 +200,9 @@ const ProductsModal = ({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Description <span className="text-red-500">*</span>
+                  </label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({...formData, description: e.target.value})}
@@ -184,7 +214,9 @@ const ProductsModal = ({
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Price (₱)</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Price (₱) <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="number"
                     step="0.01"
@@ -198,7 +230,9 @@ const ProductsModal = ({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Size</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Size <span className="text-red-500">*</span>
+                  </label>
                   <select
                     value={formData.size}
                     onChange={(e) => setFormData({...formData, size: e.target.value})}
@@ -216,19 +250,32 @@ const ProductsModal = ({
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Category</label>
-                  <input
-                    type="text"
-                    value={formData.category}
-                    onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none"
-                    required
-                    placeholder="e.g., T-Shirts, Hoodies, Jeans"
-                  />
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Category <span className="text-red-500">*</span>
+                  </label>
+                  {loadingCategories ? (
+                    <div className="w-full px-4 py-3 text-gray-500 border border-gray-200 rounded-lg animate-pulse">Loading categories...</div>
+                  ) : (
+                    <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({...formData, category: e.target.value})}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none bg-white"
+                      required
+                    >
+                      <option value="">Select Category</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.name}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Condition</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Condition <span className="text-red-500">*</span>
+                  </label>
                   <select
                     value={formData.condition}
                     onChange={(e) => setFormData({...formData, condition: e.target.value})}
@@ -247,61 +294,65 @@ const ProductsModal = ({
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
                   <select
                     value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value})}
+                    onChange={(e) => {
+                      const newStatus = e.target.value;
+                      let newFormData = { ...formData, status: newStatus };
+                      if (newStatus !== 'available') {
+                        newFormData = {
+                          ...newFormData,
+                          biddingEnabled: false,
+                          minimumBid: '',
+                          bidEndTime: '',
+                        };
+                      } else if (!editingProduct) {
+                        newFormData.minimumBid = newFormData.price;
+                      }
+                      setFormData(newFormData);
+                    }}
                     className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none bg-white"
                   >
+                    <option value="upcoming">Upcoming</option>
                     <option value="available">Available</option>
-                    <option value="sold">Sold</option>
-                    <option value="reserved">Reserved</option>
-                    <option value="expired">Expired</option>
                   </select>
                 </div>
                 <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-bold mb-2">
-                        Length (inches)
-                    </label>
-                    <input
-                        type="number"
-                        name="length"
-                        value={formData.length}
-                        onChange={(e) => setFormData({...formData, length: e.target.value})}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none bg-white"
-                        placeholder="Enter length in inches"
-                    />
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Length (inches)
+                  </label>
+                  <input
+                    type="number"
+                    name="length"
+                    value={formData.length}
+                    onChange={(e) => setFormData({...formData, length: e.target.value})}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none bg-white"
+                    placeholder="Enter length in inches"
+                  />
                 </div>
 
                 <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-bold mb-2">
-                        Width (inches)
-                    </label>
-                    <input
-                        type="number"
-                        name="width"
-                        value={formData.width}
-                        onChange={(e) => setFormData({...formData, width: e.target.value})}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none bg-white"
-                        placeholder="Enter width in inches"
-                    />
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Width (inches)
+                  </label>
+                  <input
+                    type="number"
+                    name="width"
+                    value={formData.width}
+                    onChange={(e) => setFormData({...formData, width: e.target.value})}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none bg-white"
+                    placeholder="Enter width in inches"
+                  />
                 </div>
               </div>
 
               {/* Bidding Settings */}
-              <div className="border-t pt-6">
-                <div className="flex items-center space-x-3 mb-4">
-                  <input
-                    type="checkbox"
-                    id="biddingEnabled"
-                    checked={formData.biddingEnabled}
-                    onChange={(e) => setFormData({...formData, biddingEnabled: e.target.checked})}
-                    className="w-4 h-4 text-[#135918] bg-gray-100 border-gray-300 rounded focus:ring-[#135918] focus:ring-2"
-                  />
-                  <label htmlFor="biddingEnabled" className="text-lg font-semibold text-gray-900 flex items-center">
-                    <Gavel className="h-5 w-5 mr-2" />
-                    Enable Bidding/Auction
-                  </label>
-                </div>
-
-                {formData.biddingEnabled && (
+              {formData.status === 'available' && (
+                <div className="border-t pt-6">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <label className="text-lg font-semibold text-gray-900 flex items-center">
+                      <Gavel className="h-5 w-5 mr-2" />
+                      Enable Bidding/Auction
+                    </label>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-orange-50 p-6 rounded-lg">
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">Minimum Bid Amount (₱)</label>
@@ -321,14 +372,20 @@ const ProductsModal = ({
                       <input
                         type="datetime-local"
                         value={formData.bidEndTime}
-                        onChange={(e) => setFormData({...formData, bidEndTime: e.target.value})}
+                        onChange={(e) => {
+                          setFormData({
+                            ...formData,
+                            bidEndTime: e.target.value,
+                            biddingEnabled: !!e.target.value, // Set biddingEnabled to true if there's a value
+                          });
+                        }}
                         className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                         min={new Date().toISOString().slice(0, 16)}
                       />
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               <div className="flex space-x-4 pt-6">
                 <button

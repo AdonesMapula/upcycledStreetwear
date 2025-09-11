@@ -1,0 +1,220 @@
+// src/components/SoldProducts.jsx
+
+import { useState, useEffect } from 'react';
+import {
+  Package,
+  Search,
+  Eye,
+  Star,
+  Clock,
+  DollarSign,
+  Tag,
+  Shirt,
+} from 'lucide-react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { formatPrice, getStatusColor, getConditionIcon, getTimeLeft } from '../utils/productUtils.jsx';
+import SoldProductDetailModal from '../modals/SoldProductDetailModal';
+
+const SoldProducts = () => {
+  const [soldProducts, setSoldProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+
+  useEffect(() => {
+    fetchSoldProducts();
+  }, []);
+
+  const fetchSoldProducts = async () => {
+    setLoading(true);
+    try {
+      const q = query(collection(db, 'products'), where('status', '==', 'sold'));
+      const snapshot = await getDocs(q);
+      const fetchedProducts = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        soldAt: doc.data().soldAt?.toDate?.() || doc.data().soldAt,
+      }));
+      setSoldProducts(fetchedProducts);
+    } catch (error) {
+      console.error('Error fetching sold products:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredProducts = soldProducts.filter((product) => {
+    const matchesSearch =
+      product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.category?.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesSearch;
+  });
+
+  const handleViewDetails = (product) => {
+    setSelectedProduct(product);
+    setShowDetailModal(true);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-8">
+        <div className="animate-pulse max-w-7xl mx-auto">
+          <div className="h-10 bg-gray-200 rounded-lg w-1/3 mb-8"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div key={i} className="bg-white rounded-xl p-4 shadow-sm">
+                <div className="h-48 bg-gray-200 rounded-lg mb-4"></div>
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header Section */}
+        <div className="bg-white rounded-2xl shadow-sm p-8 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">Sold Products</h1>
+              <p className="text-lg text-gray-600">
+                View a history of all sold upcycled streetwear items
+              </p>
+              <div className="flex items-center space-x-6 mt-4">
+                <div className="flex items-center text-sm text-gray-500">
+                  <Package className="h-4 w-4 mr-1" />
+                  {soldProducts.length} Products Sold
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Search Section */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <input
+                type="text"
+                placeholder="Search sold products..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none transition-colors"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Products Grid Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredProducts.length > 0 ? (
+            filteredProducts.map((product) => (
+              <div
+                key={product.id}
+                className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group"
+              >
+                <div className="relative">
+                  {product.imageUrls && product.imageUrls.length > 0 ? (
+                    <div className="relative h-48 overflow-hidden">
+                      <img
+                        src={product.imageUrls[0]}
+                        alt={product.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      {product.imageUrls.length > 1 && (
+                        <div className="absolute top-3 right-3 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded-full flex items-center">
+                          <Eye className="h-3 w-3 mr-1" />
+                          {product.imageUrls.length}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="h-48 bg-gray-100 flex items-center justify-center">
+                      <Package className="h-12 w-12 text-gray-400" />
+                    </div>
+                  )}
+                  <span
+                    className={`absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor('sold')}`}
+                  >
+                    Sold
+                  </span>
+                </div>
+
+                <div className="p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <h3 className="text-lg font-bold text-gray-900 line-clamp-2 flex-1 mr-2">
+                      {product.name}
+                    </h3>
+                    <span className="text-xl font-bold text-gray-900">
+                      {formatPrice(product.finalPrice || product.price)}
+                    </span>
+                  </div>
+                  <p className="text-gray-600 text-sm line-clamp-2 mb-4">
+                    {product.description}
+                  </p>
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center text-gray-500">
+                        <Tag className="h-4 w-4 mr-1" />
+                        {product.category}
+                      </div>
+                      <div className="flex items-center text-gray-500">
+                        <Shirt className="h-4 w-4 mr-1" />
+                        {product.size}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center text-gray-500">
+                        {getConditionIcon(product.condition)}
+                        <span className="ml-1">{product.condition}</span>
+                      </div>
+                      <div className="flex items-center text-gray-500">
+                        <Clock className="h-4 w-4 mr-1" />
+                        Sold on {new Date(product.soldAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleViewDetails(product)}
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium flex items-center justify-center space-x-1 transition-colors"
+                    >
+                      <Eye className="h-4 w-4" />
+                      <span>Details</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-white rounded-2xl shadow-sm p-12 text-center col-span-full">
+              <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No sold products found</h3>
+              <p className="text-gray-500">Try adjusting your search criteria.</p>
+            </div>
+          )}
+        </div>
+
+        {showDetailModal && (
+          <SoldProductDetailModal
+            showModal={showDetailModal}
+            setShowModal={setShowDetailModal}
+            product={selectedProduct}
+            formatPrice={formatPrice}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default SoldProducts;

@@ -16,6 +16,9 @@ import {
   X
 } from 'lucide-react';
 
+// ✅ Added imports for Recharts
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
 // Existing Modals
 const CustomerAnalyticsModal = ({ onClose }) => {
   return (
@@ -98,6 +101,9 @@ const SalesAnalytics = () => {
   const [salesData, setSalesData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
   const [filterPeriod, setFilterPeriod] = useState('month');
+  // ✅ Added state for custom date range
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -114,9 +120,10 @@ const SalesAnalytics = () => {
     fetchSalesData();
   }, []);
 
+  // Updated useEffect to apply filter based on period or custom dates
   useEffect(() => {
-    applyFilter(filterPeriod);
-  }, [salesData, filterPeriod]);
+    applyFilter(filterPeriod, startDate, endDate);
+  }, [salesData, filterPeriod, startDate, endDate]);
 
   const fetchSalesData = async () => {
     try {
@@ -140,33 +147,43 @@ const SalesAnalytics = () => {
     }
   };
 
-  const applyFilter = (period) => {
+  const applyFilter = (period, customStartDate, customEndDate) => {
+    let finalStartDate = null;
     const now = new Date();
-    let startDate;
-
-    switch (period) {
-      case 'week':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-        break;
-      case 'month':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-        break;
-      case 'quarter':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
-        break;
-      case 'year':
-        startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-        break;
-      default:
-        startDate = new Date(0);
+    
+    // Determine the start date based on the selected period
+    if (period === 'custom' && customStartDate) {
+      finalStartDate = new Date(customStartDate);
+    } else {
+      switch (period) {
+        case 'week':
+          finalStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+          break;
+        case 'month':
+          finalStartDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+          break;
+        case 'quarter':
+          finalStartDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+          break;
+        case 'year':
+          finalStartDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+          break;
+        default:
+          finalStartDate = new Date(0); // All time
+      }
     }
 
     const filtered = salesData.filter(sale => {
       const saleDate = sale.date?.seconds 
         ? new Date(sale.date.seconds * 1000) 
         : new Date(sale.createdAt?.seconds * 1000 || sale.timestamp?.seconds * 1000 || sale.date);
-      return saleDate >= startDate;
+      
+      const isAfterStartDate = finalStartDate ? saleDate >= finalStartDate : true;
+      const isBeforeEndDate = customEndDate ? saleDate <= new Date(customEndDate) : true;
+      
+      return isAfterStartDate && isBeforeEndDate;
     });
+    
     setFilteredData(filtered);
     setCurrentPage(1); // Reset to first page whenever filter changes
   };
@@ -175,19 +192,16 @@ const SalesAnalytics = () => {
     const totalSales = data.reduce((sum, sale) => sum + (sale.price || 0), 0);
     const totalOrders = data.length;
     const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
-    
     const statusCounts = data.reduce((acc, sale) => {
       const status = sale.status || 'unknown';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {});
-
     const categorySales = data.reduce((acc, sale) => {
       const category = sale.category || 'uncategorized';
       acc[category] = (acc[category] || 0) + (sale.price || 0);
       return acc;
     }, {});
-
     return {
       totalSales,
       totalOrders,
@@ -200,28 +214,24 @@ const SalesAnalytics = () => {
   const stats = calculateStats(filteredData);
   const totalItems = filteredData.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage);
-  
   // Calculate the sales for the current page
   const currentSales = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
   const getPercentageChange = (currentValue, previousValue) => {
     if (previousValue === 0) return '+100%';
     const change = ((currentValue - previousValue) / previousValue) * 100;
     return `${change > 0 ? '+' : ''}${change.toFixed(1)}%`;
   };
-
   const getInsight = (stats) => {
     const sortedCategories = Object.entries(stats.categorySales).sort(([, a], [, b]) => b - a);
     const topCategory = sortedCategories.length > 0 ? sortedCategories[0][0] : null;
-
     const sortedStatuses = Object.entries(stats.statusCounts).sort(([, a], [, b]) => b - a);
-    const topStatus = sortedStatuses.length > 0 ? sortedStatuses[0][0] : null;
+    const topStatus = sortedStatuses.length > 0 ?
+    sortedStatuses[0][0] : null;
 
     return { topCategory, topStatus };
   };
 
   const insights = getInsight(stats);
-
   const formatDate = (dateField) => {
     if (!dateField) return 'N/A';
     if (dateField.seconds) {
@@ -251,10 +261,8 @@ const SalesAnalytics = () => {
       default: return '❓';
     }
   };
-
   const handleGenerateReport = () => setShowReportModal(true);
   const handleViewCustomerAnalytics = () => setShowCustomerAnalyticsModal(true);
-  
   const handleExportData = (scope) => {
     setExportScope(scope);
     setShowExportModal(true);
@@ -284,6 +292,12 @@ const SalesAnalytics = () => {
     );
   }
 
+  // ✅ Added data preparation for the chart
+  const categoryChartData = Object.entries(stats.categorySales).map(([category, sales]) => ({
+    name: category,
+    sales: sales
+  }));
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
@@ -294,14 +308,38 @@ const SalesAnalytics = () => {
         <div className="flex items-center space-x-4">
           <select
             value={filterPeriod}
-            onChange={(e) => setFilterPeriod(e.target.value)}
+            onChange={(e) => {
+              setFilterPeriod(e.target.value);
+              setStartDate(null); // Clear custom dates when a preset is selected
+              setEndDate(null);
+            }}
             className="input-field"
           >
             <option value="week">This Week</option>
             <option value="month">This Month</option>
             <option value="quarter">This Quarter</option>
             <option value="year">This Year</option>
+            <option value="all">All Time</option>
+            <option value="custom">Custom Range</option>
           </select>
+          {/* ✅ Added date inputs for custom range */}
+          {filterPeriod === 'custom' && (
+            <div className="flex items-center space-x-2">
+              <input
+                type="date"
+                value={startDate ? startDate.toISOString().substr(0, 10) : ''}
+                onChange={(e) => setStartDate(new Date(e.target.value))}
+                className="input-field"
+              />
+              <span className="text-gray-500">-</span>
+              <input
+                type="date"
+                value={endDate ? endDate.toISOString().substr(0, 10) : ''}
+                onChange={(e) => setEndDate(new Date(e.target.value))}
+                className="input-field"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -408,13 +446,66 @@ const SalesAnalytics = () => {
           </div>
         </div>
       </div>
+      
+      {/* ✅ ADDED: Bar Chart for Sales by Category */}
+      <div className="card mb-8">
+        <h3 className="text-lg font-semibold text-secondary mb-4">Sales by Category Chart</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={categoryChartData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip formatter={(value) => formatPrice(value)} />
+            <Legend />
+            <Bar dataKey="sales" fill="#8884d8" name="Total Sales" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
 
       <div className="card">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-secondary">Recent Sales</h3>
-          <div className="flex items-center space-x-4">
-            <button onClick={() => handleExportData('page')} className="btn-secondary">Export Page</button>
-            <button onClick={() => handleExportData('all-filtered')} className="btn-primary">Export All Filtered</button>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
+          <h3 className="text-lg font-semibold text-secondary mb-2 sm:mb-0">Recent Sales</h3>
+          {/* ✅ ADDED: Filter and export controls for the Recent Sales table */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+            <div className="flex items-center space-x-2">
+              <select
+                value={filterPeriod}
+                onChange={(e) => {
+                  setFilterPeriod(e.target.value);
+                  setStartDate(null);
+                  setEndDate(null);
+                }}
+                className="input-field"
+              >
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="quarter">This Quarter</option>
+                <option value="year">This Year</option>
+                <option value="all">All Time</option>
+                <option value="custom">Custom Range</option>
+              </select>
+              {filterPeriod === 'custom' && (
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="date"
+                    value={startDate ? startDate.toISOString().substr(0, 10) : ''}
+                    onChange={(e) => setStartDate(new Date(e.target.value))}
+                    className="input-field"
+                  />
+                  <span className="text-gray-500">-</span>
+                  <input
+                    type="date"
+                    value={endDate ? endDate.toISOString().substr(0, 10) : ''}
+                    onChange={(e) => setEndDate(new Date(e.target.value))}
+                    className="input-field"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="flex space-x-2">
+              <button onClick={() => handleExportData('page')} className="btn-secondary">Export Page</button>
+              <button onClick={() => handleExportData('all-filtered')} className="btn-primary">Export All Filtered</button>
+            </div>
           </div>
         </div>
         <div className="overflow-x-auto">
