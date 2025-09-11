@@ -502,7 +502,7 @@ Respond as the admin assistant with specific data-driven insights:`;
 
           {/* Enhanced Stats Bar */}
           <div className="px-4 py-3 bg-green-50 border-b border-green-100">
-            <div className="grid grid-cols-4 gap-2 text-xs">
+            <div className="grid grid-cols-5 gap-2 text-xs">
               <div className="text-center">
                 <div className="font-bold text-green-800">{adminStats.todayOrders}</div>
                 <div className="text-green-600">Today</div>

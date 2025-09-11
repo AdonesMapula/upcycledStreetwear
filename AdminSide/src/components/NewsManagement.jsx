@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, Search, Upload, X, Image as ImageIcon } from 'lucid
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
+import { useAlert } from "../contexts/alertContext";
 
 const NewsManagement = () => {
   const [news, setNews] = useState([]);

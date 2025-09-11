@@ -6,20 +6,24 @@ import ProductManagement from './components/ProductManagement';
 import SalesAnalytics from './components/SalesAnalytics';
 import CustomerManagement from './components/CustomerManagement';
 import OrderManagement from './components/OrderManagement';
-
 import Sidebar from './Layout/Sidebar';
 import { auth } from './firebase/config';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import NewsManagement from './components/NewsManagement';
 import MessageChatbot from './ai/UpcycledAdminAssistant';
 
-function App() {
+// Import the new Alert components and context
+import AlertModal from './modals/AlertModal';
+import { AlertProvider, useAlert } from './contexts/alertContext';
+// New wrapper component to use the context
+const AppContent = () => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true); 
+  const [loading, setLoading] = useState(true);
+  const { alert, hideAlert } = useAlert(); // Access global alert state
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);  
+      setUser(user);
       setLoading(false);
     });
 
@@ -51,21 +55,39 @@ function App() {
   }
 
   return (
+    <div className="flex h-screen bg-cream">
+      <Sidebar />
+      <main className="flex-1 overflow-auto">
+        <MessageChatbot />
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/products" element={<ProductManagement />} />
+          <Route path="/news" element={<NewsManagement />} />
+          <Route path="/orders" element={<OrderManagement />} />
+          <Route path="/sales" element={<SalesAnalytics />} />
+          <Route path="/customers" element={<CustomerManagement />} />
+        </Routes>
+      </main>
+
+      {/* Render the global alert modal here */}
+      {alert && (
+        <AlertModal
+          type={alert.type}
+          message={alert.message}
+          onClose={hideAlert}
+        />
+      )}
+    </div>
+  );
+};
+
+// Main App component with the Router and Provider
+function App() {
+  return (
     <Router>
-      <div className="flex h-screen bg-cream">
-        <Sidebar />
-        <main className="flex-1 overflow-auto">
-          <MessageChatbot/>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/products" element={<ProductManagement />} />
-            <Route path="/news" element={<NewsManagement />} />
-            <Route path="/orders" element={<OrderManagement />} />
-            <Route path="/sales" element={<SalesAnalytics />} />
-            <Route path="/customers" element={<CustomerManagement />} />  
-          </Routes>
-        </main>
-      </div>
+      <AlertProvider>
+        <AppContent />
+      </AlertProvider>
     </Router>
   );
 }

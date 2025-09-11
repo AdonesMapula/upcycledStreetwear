@@ -10,10 +10,15 @@ import {
   doc,
   updateDoc,
   where,
+  deleteDoc,
+  getCountFromServer,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
+import { useAlert } from "../contexts/alertContext";
+import OrdersModal from "../modals/OrdersModal";
+import EmailModal from "../modals/EmailModal";
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 8;
 
 const OrderManagement = () => {
   const [orders, setOrders] = useState([]);
@@ -25,12 +30,15 @@ const OrderManagement = () => {
   const [hasNext, setHasNext] = useState(false);
   const [hasPrev, setHasPrev] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
-  
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false); // New state for email modal
+  const [emailRecipient, setEmailRecipient] = useState(""); // New state for email recipient
+
   // Filter states
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // Stats
   const [orderStats, setOrderStats] = useState({
     total: 0,
@@ -38,19 +46,58 @@ const OrderManagement = () => {
     confirmed: 0,
     declined: 0,
     grab: 0,
-    sold: 0
+    sold: 0,
   });
+
+  const { showAlert } = useAlert();
+
+  // Helper functions for modal and email
+  const handleDetailsClick = (order) => {
+    setSelectedOrder(order);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedOrder(null);
+  };
+
+  const handleEmailClick = (customerEmail) => {
+    if (customerEmail) {
+      setEmailRecipient(customerEmail);
+      setIsEmailModalOpen(true);
+    } else {
+      showAlert("error", "No email address available for this customer.");
+    }
+  };
+
+  const handleCloseEmailModal = () => {
+    setIsEmailModalOpen(false);
+    setEmailRecipient("");
+  };
+
+  // Define status transitions
+  const statusTransitions = {
+    pending: [
+      { newStatus: "confirmed", label: "✅ Confirm Order", color: "bg-green-500", icon: "✅" },
+      { newStatus: "declined", label: "❌ Decline Order", color: "bg-red-500", icon: "❌" },
+    ],
+    confirmed: [
+      { newStatus: "grab", label: "🚚 Ready for Pickup", color: "bg-blue-500", icon: "🚚" },
+    ],
+    grab: [
+      { newStatus: "sold", label: "💰 Mark as Completed", color: "bg-purple-500", icon: "💰" },
+    ],
+  };
 
   // Format Firestore Timestamp or string date
   const formatDate = (dateValue) => {
     if (!dateValue) return "N/A";
     if (dateValue.toDate) {
-      return dateValue.toDate().toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+      return dateValue.toDate().toLocaleString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     }
     return new Date(dateValue).toLocaleString();
@@ -81,51 +128,63 @@ const OrderManagement = () => {
       declined: { color: "bg-red-100 text-red-800 border-red-200", icon: "❌", label: "Declined" },
       grab: { color: "bg-blue-100 text-blue-800 border-blue-200", icon: "🚚", label: "Ready for Pickup" },
       sold: { color: "bg-purple-100 text-purple-800 border-purple-200", icon: "💰", label: "Completed" },
-      processing: { color: "bg-orange-100 text-orange-800 border-orange-200", icon: "⚙️", label: "Processing" }
     };
     return statusMap[status] || statusMap.pending;
   };
 
-  // Calculate order statistics
-  const calculateStats = (orderList) => {
-    const stats = {
-      total: orderList.length,
-      pending: 0,
-      confirmed: 0,
-      declined: 0,
-      grab: 0,
-      sold: 0
-    };
+  // Fetch all order statistics
+  const fetchAllStats = async () => {
+    try {
+      const ordersRef = collection(db, "orders");
+      const statuses = ["pending", "confirmed", "declined", "grab", "sold"];
 
-    orderList.forEach(order => {
-      if (stats[order.status] !== undefined) {
-        stats[order.status]++;
-      }
-    });
+      const counts = await Promise.all(
+        statuses.map(async (status) => {
+          const q = query(ordersRef, where("status", "==", status));
+          const snapshot = await getCountFromServer(q);
+          return { status, count: snapshot.data().count };
+        })
+      );
 
-    setOrderStats(stats);
+      const totalSnapshot = await getCountFromServer(ordersRef);
+      const totalCount = totalSnapshot.data().count;
+
+      const newStats = { total: totalCount };
+      counts.forEach(({ status, count }) => {
+        newStats[status] = count;
+      });
+
+      setOrderStats(newStats);
+    } catch (err) {
+      console.error("Error fetching stats:", err);
+    }
   };
 
   // Fetch paginated orders
   const fetchOrders = async (direction = "initial") => {
     setLoading(true);
     try {
-      let q;
       const ordersRef = collection(db, "orders");
       let queryConstraints = [orderBy("date", "desc"), limit(PAGE_SIZE)];
 
-      // Apply status filter
+      // Apply status and date filters
+      let filters = [];
       if (statusFilter !== "all") {
-        queryConstraints.unshift(where("status", "==", statusFilter));
+        filters.push(where("status", "==", statusFilter));
       }
 
+      // Add pagination constraints
       if (direction === "next" && lastDoc) {
         queryConstraints.push(startAfter(lastDoc));
+        setPage(page + 1);
       } else if (direction === "prev" && firstDoc) {
         queryConstraints.push(endBefore(firstDoc));
+        setPage(page - 1);
+      } else if (direction === "initial" || direction === "filter") {
+        setPage(1);
       }
 
-      q = query(ordersRef, ...queryConstraints);
+      const q = query(ordersRef, ...filters, ...queryConstraints);
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
@@ -134,27 +193,32 @@ const OrderManagement = () => {
           ...doc.data(),
         }));
 
-        // Apply search filter
+        // Apply client-side search filter
         if (searchTerm) {
-          orderList = orderList.filter(order =>
-            order.customerId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            order.product?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            order.id.toLowerCase().includes(searchTerm.toLowerCase())
+          orderList = orderList.filter(
+            (order) =>
+              order.customerId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              order.product?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              order.id.toLowerCase().includes(searchTerm.toLowerCase())
           );
         }
 
-        // Apply date filter
+        // Apply client-side date filter
         if (dateFilter !== "all") {
           const now = new Date();
-          orderList = orderList.filter(order => {
+          orderList = orderList.filter((order) => {
             const orderDate = order.date?.toDate ? order.date.toDate() : new Date(order.date);
             const diffDays = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
-            
+
             switch (dateFilter) {
-              case "today": return diffDays === 0;
-              case "week": return diffDays <= 7;
-              case "month": return diffDays <= 30;
-              default: return true;
+              case "today":
+                return diffDays === 0;
+              case "week":
+                return diffDays <= 7;
+              case "month":
+                return diffDays <= 30;
+              default:
+                return true;
             }
           });
         }
@@ -163,23 +227,11 @@ const OrderManagement = () => {
         setFirstDoc(snapshot.docs[0]);
         setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
 
-        setHasPrev(direction !== "initial" && page > 1);
+        setHasPrev(page > 1);
         setHasNext(snapshot.docs.length === PAGE_SIZE);
-
-        if (direction === "next") setPage((prev) => prev + 1);
-        if (direction === "prev") setPage((prev) => Math.max(prev - 1, 1));
-
-        calculateStats(orderList);
       } else {
         setOrders([]);
-        setOrderStats({
-          total: 0,
-          pending: 0,
-          confirmed: 0,
-          declined: 0,
-          grab: 0,
-          sold: 0
-        });
+        setHasNext(false);
       }
     } catch (err) {
       console.error("Error fetching orders: ", err);
@@ -189,6 +241,7 @@ const OrderManagement = () => {
   };
 
   useEffect(() => {
+    fetchAllStats();
     fetchOrders("initial");
   }, [statusFilter, dateFilter, searchTerm]);
 
@@ -196,69 +249,64 @@ const OrderManagement = () => {
   const updateOrderStatus = async (id, newStatus) => {
     try {
       const orderRef = doc(db, "orders", id);
-      await updateDoc(orderRef, { 
+      await updateDoc(orderRef, {
         status: newStatus,
-        lastUpdated: new Date()
+        lastUpdated: new Date(),
       });
 
-      // Update locally
-      setOrders((prev) =>
-        prev.map((order) =>
-          order.id === id ? { ...order, status: newStatus, lastUpdated: new Date() } : order
-        )
-      );
+      // Use the global alert modal
+      showAlert("success", `Order status updated to "${newStatus}"!`);
+
+      // Re-fetch data to reflect changes and update stats
+      fetchAllStats();
+      fetchOrders("initial");
       setExpandedCard(null);
-
-      // Show success notification
-      const notification = document.createElement('div');
-      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-pulse';
-      notification.textContent = `Order ${newStatus} successfully!`;
-      document.body.appendChild(notification);
-      setTimeout(() => document.body.removeChild(notification), 3000);
-
     } catch (err) {
       console.error("Error updating order status:", err);
-      alert("Failed to update status.");
+      showAlert("error", "Failed to update status.");
     }
   };
 
-  // Bulk status update
-  const bulkUpdateStatus = async (selectedOrders, newStatus) => {
+  // Delete an order from Firestore
+  const deleteOrder = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this order? This action cannot be undone.")) {
+      return;
+    }
     try {
-      const updates = selectedOrders.map(orderId => {
-        const orderRef = doc(db, "orders", orderId);
-        return updateDoc(orderRef, { 
-          status: newStatus,
-          lastUpdated: new Date()
-        });
-      });
+      const orderRef = doc(db, "orders", id);
+      await deleteDoc(orderRef);
 
-      await Promise.all(updates);
-      fetchOrders("initial"); // Refresh data
+      // Use the global alert modal
+      showAlert("success", "Order deleted successfully!");
+
+      // Re-fetch data to reflect changes and update stats
+      fetchAllStats();
+      fetchOrders("initial");
+      setExpandedCard(null);
     } catch (err) {
-      console.error("Error bulk updating:", err);
-      alert("Failed to bulk update orders.");
+      console.error("Error deleting order:", err);
+      showAlert("error", "Failed to delete order.");
     }
   };
 
-if (loading) {
-  return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="animate-pulse max-w-7xl mx-auto">
-        <div className="h-10 bg-gray-200 rounded-lg w-1/3 mb-8"></div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="bg-white rounded-xl p-4 shadow-sm">
-              <div className="h-48 bg-gray-200 rounded-lg mb-4"></div>
-              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-              <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-            </div>
-          ))}
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-8">
+        <div className="animate-pulse max-w-7xl mx-auto">
+          <div className="h-10 bg-gray-200 rounded-lg w-1/3 mb-8"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div key={i} className="bg-white rounded-xl p-4 shadow-sm">
+                <div className="h-48 bg-gray-200 rounded-lg mb-4"></div>
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   if (error) {
     return (
@@ -267,8 +315,8 @@ if (loading) {
           <div className="text-red-500 text-5xl mb-4">⚠️</div>
           <p className="text-xl text-red-600 font-semibold mb-2">Error Loading Orders</p>
           <p className="text-gray-600 mb-4">{error}</p>
-          <button 
-            onClick={() => window.location.reload()} 
+          <button
+            onClick={() => window.location.reload()}
             className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition-colors"
           >
             Try Again
@@ -288,7 +336,7 @@ if (loading) {
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Order Management</h1>
               <p className="text-gray-600">Manage and track all customer orders</p>
             </div>
-            
+
             {/* Quick Stats */}
             <div className="mt-4 lg:mt-0 grid grid-cols-3 lg:grid-cols-6 gap-4 text-center">
               <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg p-3">
@@ -384,6 +432,7 @@ if (loading) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {orders.map((order) => {
                 const statusInfo = getStatusInfo(order.status);
+                const availableActions = statusTransitions[order.status] || [];
                 return (
                   <div
                     key={order.id}
@@ -416,21 +465,21 @@ if (loading) {
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-500">Customer:</span>
                           <span className="text-sm font-medium text-gray-900 truncate">
-                            {order.customerId || 'N/A'}
+                            {order.customerId || "N/A"}
                           </span>
                         </div>
 
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-500">Product:</span>
                           <span className="text-sm font-medium text-gray-900 truncate">
-                            {order.product || 'N/A'}
+                            {order.product || "N/A"}
                           </span>
                         </div>
 
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-500">Amount:</span>
                           <span className="text-lg font-bold text-green-600">
-                            ₱{order.price?.toLocaleString() || '0'}
+                            ₱{order.price?.toLocaleString() || "0"}
                           </span>
                         </div>
 
@@ -446,72 +495,50 @@ if (loading) {
                       {expandedCard === order.id && (
                         <div className="mt-6 pt-4 border-t border-gray-100">
                           <div className="flex flex-col space-y-2">
-                            {order.status === 'pending' && (
-                              <>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateOrderStatus(order.id, "confirmed");
-                                  }}
-                                  className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center"
-                                >
-                                  ✅ Confirm Order
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateOrderStatus(order.id, "declined");
-                                  }}
-                                  className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center"
-                                >
-                                  ❌ Decline Order
-                                </button>
-                              </>
-                            )}
-
-                            {order.status === 'confirmed' && (
+                            {/* Dynamically render action buttons */}
+                            {availableActions.map((action) => (
                               <button
+                                key={action.newStatus}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  updateOrderStatus(order.id, "grab");
+                                  updateOrderStatus(order.id, action.newStatus);
                                 }}
-                                className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center"
+                                className={`w-full px-4 py-2 text-white font-medium rounded-lg transition-colors flex items-center justify-center ${action.color} hover:opacity-90`}
                               >
-                                🚚 Mark Ready for Pickup
+                                {action.label}
                               </button>
-                            )}
+                            ))}
 
-                            {order.status === 'grab' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateOrderStatus(order.id, "sold");
-                                }}
-                                className="w-full px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center"
-                              >
-                                💰 Mark as Completed
-                              </button>
-                            )}
+                            {/* Delete Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteOrder(order.id);
+                              }}
+                              className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors flex items-center justify-center"
+                            >
+                              🗑️ Delete Order
+                            </button>
 
                             {/* Additional Actions */}
                             <div className="flex space-x-2 mt-2">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  // Add view details functionality
+                                  handleDetailsClick(order);
                                 }}
-                                className="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+                                className="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-m font-medium rounded-lg transition-colors"
                               >
                                 👁️ Details
                               </button>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  // Add contact customer functionality
+                                  handleEmailClick(order.customerEmail);
                                 }}
-                                className="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+                                className="flex-1 px-3 py-2 bg-red-500 hover:bg-red-800 text-gray-100 text-m font-medium rounded-lg transition-colors"
                               >
-                                📞 Contact
+                                📧 Email
                               </button>
                             </div>
                           </div>
@@ -522,7 +549,7 @@ if (loading) {
                     {/* Expand indicator */}
                     <div className="px-6 pb-4">
                       <div className="text-center text-xs text-gray-400">
-                        {expandedCard === order.id ? '▲ Click to collapse' : '▼ Click to expand'}
+                        {expandedCard === order.id ? "▲ Click to collapse" : "▼ Click to expand"}
                       </div>
                     </div>
                   </div>
@@ -531,11 +558,9 @@ if (loading) {
 
               {/* Fill remaining grid spaces */}
               {orders.length < PAGE_SIZE &&
-                Array.from({ length: PAGE_SIZE - orders.length }).map(
-                  (_, idx) => (
-                    <div key={`placeholder-${idx}`} className="hidden lg:block" />
-                  )
-                )}
+                Array.from({ length: PAGE_SIZE - orders.length }).map((_, idx) => (
+                  <div key={`placeholder-${idx}`} className="hidden lg:block" />
+                ))}
             </div>
 
             {/* Pagination */}
@@ -583,6 +608,19 @@ if (loading) {
           </div>
         )}
       </div>
+
+      {/* OrdersModal Component */}
+      {selectedOrder && (
+        <OrdersModal order={selectedOrder} onClose={handleCloseModal} />
+      )}
+
+      {/* Email Modal Component */}
+      {isEmailModalOpen && (
+        <EmailModal
+          recipient={emailRecipient}
+          onClose={handleCloseEmailModal}
+        />
+      )}
     </div>
   );
 };
