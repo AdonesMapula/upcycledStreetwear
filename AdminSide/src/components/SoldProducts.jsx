@@ -1,5 +1,3 @@
-// src/components/SoldProducts.jsx
-
 import { useState, useEffect } from 'react';
 import {
   Package,

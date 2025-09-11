@@ -1,3 +1,5 @@
+// src/components/ProductManagement.jsx
+
 import { useState, useEffect } from 'react';
 import {
   Plus,
@@ -30,8 +32,8 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import ProductsModal from '../modals/ProductsModal';
 import BidManagementModal from '../modals/BidManagementModal';
 import CategoryModal from '../modals/CategoryModal';
+import ConfirmationModal from '../modals/ConfirmationModal'; // Import the new modal
 import { useAlert } from "../contexts/alertContext";
-
 
 const ProductManagement = () => {
   // State variables for UI and data management
@@ -48,8 +50,12 @@ const ProductManagement = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
-  const [showCategoryModal, setShowCategoryModal] = useState(false); // New state for category modal
-
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const { showAlert } = useAlert();
+  
+  // New state for confirmation modal
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [productToDelete, setProductToDelete] = useState(null);
 
   // Form data state
   const [formData, setFormData] = useState({
@@ -119,7 +125,7 @@ const ProductManagement = () => {
       setProducts(fetchedProducts);
     } catch (error) {
       console.error('Error fetching products:', error);
-      alert('Error fetching products. Please try again.');
+      showAlert("error", 'Error fetching products. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -193,7 +199,6 @@ const ProductManagement = () => {
           originalName: file.name,
         },
       };
-
       const snapshot = await uploadBytes(storageRef, file, metadata);
       const downloadURL = await getDownloadURL(snapshot.ref);
 
@@ -214,14 +219,13 @@ const ProductManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (!formData.name.trim()) {
-      alert('Product name is required');
+       showAlert("error", 'Product name is required');
       return;
     }
 
     if (!formData.price || isNaN(formData.price) || parseFloat(formData.price) <= 0) {
-      alert('Please enter a valid price');
+       showAlert("error", 'Please enter a valid price');
       return;
     }
 
@@ -231,18 +235,18 @@ const ProductManagement = () => {
         isNaN(formData.minimumBid) ||
         parseFloat(formData.minimumBid) <= 0
       ) {
-        alert('Please enter a valid minimum bid amount');
+         showAlert("error", 'Please enter a valid minimum bid amount');
         return;
       }
 
       if (!formData.bidEndTime) {
-        alert('Please select an end time for bidding');
+         showAlert("error", 'Please select an end time for bidding');
         return;
       }
 
       const endTime = new Date(formData.bidEndTime);
       if (endTime <= new Date()) {
-        alert('Bid end time must be in the future');
+         showAlert("error", 'Bid end time must be in the future');
         return;
       }
     }
@@ -250,13 +254,11 @@ const ProductManagement = () => {
     try {
       setUploading(true);
       setUploadProgress(0);
-
       let imageUrls = [...(formData.imageUrls || [])];
 
       if (imageFiles.length > 0) {
         for (let i = 0; i < imageFiles.length; i++) {
           const file = imageFiles[i];
-
           if (!file.type.startsWith('image/')) {
             throw new Error(`File ${file.name} is not an image`);
           }
@@ -267,7 +269,6 @@ const ProductManagement = () => {
 
           const downloadURL = await uploadImageToFirebase(file);
           imageUrls.push(downloadURL);
-
           setUploadProgress(((i + 1) / imageFiles.length) * 100);
         }
       }
@@ -300,24 +301,23 @@ const ProductManagement = () => {
         createdAt: editingProduct ? formData.createdAt : new Date(),
         updatedAt: new Date(),
       };
-
       if (editingProduct) {
         await updateDoc(doc(db, 'products', editingProduct.id), productPayload);
         setProducts(
           products.map((p) => (p.id === editingProduct.id ? { ...p, ...productPayload } : p))
         );
-        alert('Product updated successfully!');
+        showAlert("success", 'Product updated successfully!');
       } else {
         const docRef = await addDoc(collection(db, 'products'), productPayload);
         setProducts([...products, { id: docRef.id, ...productPayload }]);
-        alert('Product added successfully!');
+         showAlert("success", 'Product added successfully!');
       }
 
       resetForm();
       setShowModal(false);
     } catch (error) {
       console.error('Error saving product:', error);
-      alert(`Failed to save product: ${error.message}`);
+       showAlert("error", `Failed to save product: ${error.message}`);
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -362,7 +362,6 @@ const ProductManagement = () => {
             : p
         )
       );
-
       try {
         const ordersRef = collection(db, 'orders');
         await addDoc(ordersRef, {
@@ -383,13 +382,13 @@ const ProductManagement = () => {
         console.error('Failed to create order document:', orderErr);
       }
 
-      alert(
+       showAlert("error", 
         `Bid accepted! Product sold to ${acceptedBid.bidderName} for ₱${acceptedBid.amount.toLocaleString()}`
       );
       setShowBidModal(false);
     } catch (error) {
       console.error('Error accepting bid:', error);
-      alert('Failed to accept bid. Please try again.');
+      showAlert("error", 'Failed to accept bid. Please try again.');
     }
   };
 
@@ -403,10 +402,10 @@ const ProductManagement = () => {
         updatedAt: new Date(),
       });
       setProducts(products.map((p) => (p.id === productId ? { ...p, bids: updatedBids } : p)));
-      alert('Bid rejected successfully');
+       showAlert("success", 'Bid rejected successfully');
     } catch (error) {
       console.error('Error rejecting bid:', error);
-      alert('Failed to reject bid. Please try again.');
+      showAlert("error", 'Failed to reject bid. Please try again.');
     }
   };
 
@@ -423,18 +422,28 @@ const ProductManagement = () => {
     });
     setShowModal(true);
   };
-
-  const handleDelete = async (productId) => {
-    if (window.confirm('Are you sure you want to delete this product?')) {
+  
+  // New function to handle deletion confirmation
+  const confirmDelete = async () => {
+    if (productToDelete) {
       try {
-        await deleteDoc(doc(db, 'products', productId));
-        setProducts(products.filter((p) => p.id !== productId));
-        alert('Product deleted successfully!');
+        await deleteDoc(doc(db, 'products', productToDelete.id));
+        setProducts(products.filter((p) => p.id !== productToDelete.id));
+        showAlert("success", 'Product deleted successfully!');
       } catch (error) {
         console.error('Error deleting product:', error);
-        alert('Failed to delete product. Please try again.');
+        showAlert("error", 'Failed to delete product. Please try again.');
+      } finally {
+        setProductToDelete(null);
+        setShowConfirmModal(false);
       }
     }
+  };
+
+  // The function called by the UI to open the confirmation modal
+  const handleDelete = (product) => {
+    setProductToDelete(product);
+    setShowConfirmModal(true);
   };
 
   const handleViewBids = (product) => {
@@ -490,11 +499,11 @@ const ProductManagement = () => {
     const files = Array.from(e.target.files);
     const validFiles = files.filter((file) => {
       if (!file.type.startsWith('image/')) {
-        alert(`${file.name} is not an image file`);
+         showAlert(`${file.name} is not an image file`);
         return false;
       }
       if (file.size > 5 * 1024 * 1024) {
-        alert(`${file.name} is too large. Maximum size is 5MB`);
+         showAlert(`${file.name} is too large. Maximum size is 5MB`);
         return false;
       }
       return true;
@@ -584,7 +593,8 @@ const ProductManagement = () => {
           <div className="h-10 bg-gray-200 rounded-lg w-1/3 mb-8"></div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-              <div key={i} className="bg-white rounded-xl p-4 shadow-sm">
+              <div 
+                key={i} className="bg-white rounded-xl p-4 shadow-sm">
                 <div className="h-48 bg-gray-200 rounded-lg mb-4"></div>
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
                 <div className="h-3 bg-gray-200 rounded w-1/2"></div>
@@ -604,7 +614,8 @@ const ProductManagement = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-4xl font-bold text-gray-900 mb-2">Product Management</h1>
-              <p className="text-lg text-gray-600">
+              <p 
+                className="text-lg text-gray-600">
                 Manage your upcycled streetwear inventory and bidding
               </p>
               <div className="flex items-center space-x-6 mt-4">
@@ -620,7 +631,7 @@ const ProductManagement = () => {
             </div>
             <div className='pl-60 flex items-center gap-3'>
             <button
-              onClick={() => setShowCategoryModal(true)} // Set the state to true on click
+              onClick={() => setShowCategoryModal(true)}
               className="bg-[#135918] hover:bg-[#0F4713] text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-200"
             >
               <Plus className="h-5 w-5" />
@@ -628,7 +639,7 @@ const ProductManagement = () => {
             </button>
           </div>
             <button
-              onClick={() => setShowModal(true)}
+               onClick={() => setShowModal(true)}
               className="bg-[#135918] hover:bg-[#0F4713] text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-200"
             >
               <Plus className="h-5 w-5" />
@@ -677,7 +688,8 @@ const ProductManagement = () => {
             <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1 relative">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                  <Search className="absolute 
+                    left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                   <input
                     type="text"
                     placeholder="Search products by name, description, or category..."
@@ -720,7 +732,8 @@ const ProductManagement = () => {
                           }}
                         />
                         {product.imageUrls.length > 1 && (
-                          <div className="absolute top-3 right-3 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded-full flex items-center">
+                          <div 
+                            className="absolute top-3 right-3 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded-full flex items-center">
                             <Eye className="h-3 w-3 mr-1" />
                             {product.imageUrls.length}
                           </div>
@@ -745,7 +758,7 @@ const ProductManagement = () => {
                           <Gavel className="h-3 w-3 mr-1" />
                           Auction
                         </span>
-                      )}
+                    )}
                     </div>
                   </div>
 
@@ -825,7 +838,7 @@ const ProductManagement = () => {
                         </button>
                       )}
                       <button
-                        onClick={() => handleDelete(product.id)}
+                        onClick={() => handleDelete(product)}
                         className="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2 rounded-lg font-medium flex items-center justify-center transition-colors"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -1048,6 +1061,20 @@ const ProductManagement = () => {
           handleAcceptBid={handleAcceptBid}
           handleRejectBid={handleRejectBid}
         />
+
+        {showConfirmModal && (
+          <ConfirmationModal
+            showModal={showConfirmModal}
+            setShowModal={setShowConfirmModal}
+            title="Confirm Deletion"
+            message={`Are you sure you want to delete the product "${productToDelete?.name}"? This action cannot be undone.`}
+            onConfirm={confirmDelete}
+            onCancel={() => {
+              setShowConfirmModal(false);
+              setProductToDelete(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );
