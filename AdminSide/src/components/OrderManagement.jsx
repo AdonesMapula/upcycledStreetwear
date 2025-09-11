@@ -19,6 +19,7 @@ import OrdersModal from "../modals/OrdersModal";
 import EmailModal from "../modals/EmailModal";
 
 const PAGE_SIZE = 8;
+const DEBOUNCE_DELAY = 500;
 
 const OrderManagement = () => {
   const [orders, setOrders] = useState([]);
@@ -31,15 +32,14 @@ const OrderManagement = () => {
   const [hasPrev, setHasPrev] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false); // New state for email modal
-  const [emailRecipient, setEmailRecipient] = useState(""); // New state for email recipient
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [emailRecipient, setEmailRecipient] = useState("");
 
-  // Filter states
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
-  // Stats
   const [orderStats, setOrderStats] = useState({
     total: 0,
     pending: 0,
@@ -49,9 +49,9 @@ const OrderManagement = () => {
     sold: 0,
   });
 
+  // Use the useAlert hook to get the showAlert function
   const { showAlert } = useAlert();
 
-  // Helper functions for modal and email
   const handleDetailsClick = (order) => {
     setSelectedOrder(order);
   };
@@ -74,7 +74,6 @@ const OrderManagement = () => {
     setEmailRecipient("");
   };
 
-  // Define status transitions
   const statusTransitions = {
     pending: [
       { newStatus: "confirmed", label: "✅ Confirm Order", color: "bg-green-500", icon: "✅" },
@@ -88,7 +87,6 @@ const OrderManagement = () => {
     ],
   };
 
-  // Format Firestore Timestamp or string date
   const formatDate = (dateValue) => {
     if (!dateValue) return "N/A";
     if (dateValue.toDate) {
@@ -103,7 +101,6 @@ const OrderManagement = () => {
     return new Date(dateValue).toLocaleString();
   };
 
-  // Calculate relative time
   const getRelativeTime = (dateValue) => {
     if (!dateValue) return "Unknown";
     const date = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
@@ -120,7 +117,6 @@ const OrderManagement = () => {
     return formatDate(dateValue);
   };
 
-  // Get status color and icon
   const getStatusInfo = (status) => {
     const statusMap = {
       pending: { color: "bg-yellow-100 text-yellow-800 border-yellow-200", icon: "⏳", label: "Pending" },
@@ -132,7 +128,6 @@ const OrderManagement = () => {
     return statusMap[status] || statusMap.pending;
   };
 
-  // Fetch all order statistics
   const fetchAllStats = async () => {
     try {
       const ordersRef = collection(db, "orders");
@@ -160,32 +155,58 @@ const OrderManagement = () => {
     }
   };
 
-  // Fetch paginated orders
   const fetchOrders = async (direction = "initial") => {
     setLoading(true);
     try {
       const ordersRef = collection(db, "orders");
-      let queryConstraints = [orderBy("date", "desc"), limit(PAGE_SIZE)];
-
-      // Apply status and date filters
       let filters = [];
+
+      // Add status filter
       if (statusFilter !== "all") {
         filters.push(where("status", "==", statusFilter));
       }
 
-      // Add pagination constraints
-      if (direction === "next" && lastDoc) {
-        queryConstraints.push(startAfter(lastDoc));
-        setPage(page + 1);
-      } else if (direction === "prev" && firstDoc) {
-        queryConstraints.push(endBefore(firstDoc));
-        setPage(page - 1);
-      } else if (direction === "initial" || direction === "filter") {
-        setPage(1);
+      // Add date filter
+      if (dateFilter !== "all") {
+        const now = new Date();
+        let startDate;
+
+        switch (dateFilter) {
+          case "today":
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case "week":
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+            break;
+          case "month":
+            startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+            break;
+        }
+        filters.push(where("date", ">=", startDate));
       }
 
-      const q = query(ordersRef, ...filters, ...queryConstraints);
-      const snapshot = await getDocs(q);
+      // Construct the base query with all filters
+      const baseQuery = query(
+        ordersRef,
+        ...filters,
+        orderBy("date", "desc")
+      );
+
+      let paginatedQuery;
+      if (direction === "next" && lastDoc) {
+        paginatedQuery = query(baseQuery, startAfter(lastDoc), limit(PAGE_SIZE));
+      } else if (direction === "prev" && firstDoc) {
+        const prevQueryBase = query(
+          ordersRef,
+          ...filters,
+          orderBy("date", "asc")
+        );
+        paginatedQuery = query(prevQueryBase, endBefore(firstDoc), limit(PAGE_SIZE));
+      } else {
+        paginatedQuery = query(baseQuery, limit(PAGE_SIZE));
+      }
+
+      const snapshot = await getDocs(paginatedQuery);
 
       if (!snapshot.empty) {
         let orderList = snapshot.docs.map((doc) => ({
@@ -193,45 +214,37 @@ const OrderManagement = () => {
           ...doc.data(),
         }));
 
-        // Apply client-side search filter
-        if (searchTerm) {
-          orderList = orderList.filter(
-            (order) =>
-              order.customerId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              order.product?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              order.id.toLowerCase().includes(searchTerm.toLowerCase())
-          );
+        if (direction === "prev") {
+          orderList.reverse();
         }
 
-        // Apply client-side date filter
-        if (dateFilter !== "all") {
-          const now = new Date();
-          orderList = orderList.filter((order) => {
-            const orderDate = order.date?.toDate ? order.date.toDate() : new Date(order.date);
-            const diffDays = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
-
-            switch (dateFilter) {
-              case "today":
-                return diffDays === 0;
-              case "week":
-                return diffDays <= 7;
-              case "month":
-                return diffDays <= 30;
-              default:
-                return true;
-            }
-          });
+        if (debouncedSearchTerm) {
+          orderList = orderList.filter(
+            (order) =>
+              order.customerId?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+              order.product?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+              order.id.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
+          );
         }
 
         setOrders(orderList);
         setFirstDoc(snapshot.docs[0]);
         setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
 
-        setHasPrev(page > 1);
-        setHasNext(snapshot.docs.length === PAGE_SIZE);
+        const nextQuery = query(baseQuery, startAfter(snapshot.docs[snapshot.docs.length - 1]), limit(1));
+        const nextSnapshot = await getDocs(nextQuery);
+        setHasNext(!nextSnapshot.empty);
+
+        const prevQuery = query(baseQuery, endBefore(snapshot.docs[0]), limit(1));
+        const prevSnapshot = await getDocs(prevQuery);
+        setHasPrev(!prevSnapshot.empty);
+
       } else {
         setOrders([]);
+        setFirstDoc(null);
+        setLastDoc(null);
         setHasNext(false);
+        setHasPrev(false);
       }
     } catch (err) {
       console.error("Error fetching orders: ", err);
@@ -241,11 +254,20 @@ const OrderManagement = () => {
   };
 
   useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, DEBOUNCE_DELAY);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchTerm]);
+
+  useEffect(() => {
     fetchAllStats();
     fetchOrders("initial");
-  }, [statusFilter, dateFilter, searchTerm]);
+  }, [statusFilter, dateFilter, debouncedSearchTerm]);
 
-  // Update order status in Firestore
   const updateOrderStatus = async (id, newStatus) => {
     try {
       const orderRef = doc(db, "orders", id);
@@ -254,10 +276,8 @@ const OrderManagement = () => {
         lastUpdated: new Date(),
       });
 
-      // Use the global alert modal
       showAlert("success", `Order status updated to "${newStatus}"!`);
 
-      // Re-fetch data to reflect changes and update stats
       fetchAllStats();
       fetchOrders("initial");
       setExpandedCard(null);
@@ -267,19 +287,23 @@ const OrderManagement = () => {
     }
   };
 
-  // Delete an order from Firestore
+  const handleDelete = (id) => {
+  showAlert(
+    'confirm',
+    'Are you sure you want to delete this order?',
+    () => deleteOrder(id), // onConfirm callback
+    'Delete', // confirmText
+    () => console.log('Delete action canceled.') // onCancel callback
+  );
+};
+
   const deleteOrder = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this order? This action cannot be undone.")) {
-      return;
-    }
     try {
       const orderRef = doc(db, "orders", id);
       await deleteDoc(orderRef);
 
-      // Use the global alert modal
       showAlert("success", "Order deleted successfully!");
 
-      // Re-fetch data to reflect changes and update stats
       fetchAllStats();
       fetchOrders("initial");
       setExpandedCard(null);
@@ -327,7 +351,7 @@ const OrderManagement = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-[#F9F7F1]">
       {/* Header Section */}
       <div className="bg-white shadow-lg border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -513,7 +537,7 @@ const OrderManagement = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                deleteOrder(order.id);
+                                handleDelete(order.id);
                               }}
                               className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors flex items-center justify-center"
                             >
@@ -556,7 +580,6 @@ const OrderManagement = () => {
                 );
               })}
 
-              {/* Fill remaining grid spaces */}
               {orders.length < PAGE_SIZE &&
                 Array.from({ length: PAGE_SIZE - orders.length }).map((_, idx) => (
                   <div key={`placeholder-${idx}`} className="hidden lg:block" />
@@ -567,7 +590,10 @@ const OrderManagement = () => {
             <div className="mt-8 flex justify-between items-center bg-white rounded-xl shadow-sm border p-6">
               <button
                 disabled={!hasPrev}
-                onClick={() => fetchOrders("prev")}
+                onClick={() => {
+                  fetchOrders("prev");
+                  setPage(prevPage => prevPage - 1);
+                }}
                 className={`flex items-center px-6 py-3 rounded-lg font-medium transition-colors ${
                   hasPrev
                     ? "bg-blue-500 hover:bg-blue-600 text-white"
@@ -585,7 +611,10 @@ const OrderManagement = () => {
 
               <button
                 disabled={!hasNext}
-                onClick={() => fetchOrders("next")}
+                onClick={() => {
+                  fetchOrders("next");
+                  setPage(prevPage => prevPage + 1);
+                }}
                 className={`flex items-center px-6 py-3 rounded-lg font-medium transition-colors ${
                   hasNext
                     ? "bg-blue-500 hover:bg-blue-600 text-white"
@@ -609,12 +638,10 @@ const OrderManagement = () => {
         )}
       </div>
 
-      {/* OrdersModal Component */}
       {selectedOrder && (
         <OrdersModal order={selectedOrder} onClose={handleCloseModal} />
       )}
 
-      {/* Email Modal Component */}
       {isEmailModalOpen && (
         <EmailModal
           recipient={emailRecipient}

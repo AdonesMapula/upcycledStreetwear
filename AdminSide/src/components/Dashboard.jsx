@@ -8,7 +8,11 @@ import {
   Plus,
   FileText,
   Settings,
-  X
+  X,
+  BarChart3,
+  Activity,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase/config.js';
@@ -117,7 +121,7 @@ const Dashboard = () => {
       const recentOrdersQuery = query(
         collection(db, "orders"),
         orderBy("date", "desc"),
-        limit(5)
+        limit(6)
       );
       const recentOrdersSnap = await getDocs(recentOrdersQuery);
       const recentOrders = recentOrdersSnap.docs.map(doc => ({
@@ -178,207 +182,384 @@ const Dashboard = () => {
     setShowInventoryModal(true);
   };
   
-  return (
-    <div className="p-8">
-      {/* ... unchanged code ... */}
-
-      {/* Recent Orders */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-secondary">Recent Orders</h2>
-          <button onClick={() => navigate('/sales')} className="btn-secondary">View All</button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4">Customer</th>
-                <th className="text-left py-3 px-4">Product</th>
-                <th className="text-left py-3 px-4">Price</th>
-                <th className="text-left py-3 px-4">Status</th>
-                <th className="text-left py-3 px-4">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentOrders.map((order) => (
-                <tr key={order.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-3 px-4">{order.customerName}</td>
-                  <td className="py-3 px-4">{order.product}</td>
-                  <td className="py-3 px-4 font-medium">{formatPrice(order.price)}</td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                      {order.status?.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-gray-600">{order.date}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg- [#F9F7F1] rounded w-1/3"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-32 bg- [#F9F7F1] rounded-xl"></div>
+            ))}
+          </div>
+          <div className="h-96 bg- [#F9F7F1] rounded-xl"></div>
         </div>
       </div>
+    );
+  }
 
-      {/* Latest News */}
-      <div className="card mt-8">
-        <h2 className="text-xl font-semibold text-secondary mb-4">Latest News</h2>
-        {latestNews.length === 0 ? (
-          <p className="text-gray-600">No news available.</p>
-        ) : (
-          <ul className="space-y-4">
-            {latestNews.map((news) => (
-              <li key={news.id} className="border-b border-gray-200 pb-3 last:border-none">
-                <h3 className="text-lg font-semibold text-primary">{news.name || news.title}</h3>
-                <p className="text-gray-600 line-clamp-2">{news.description}</p>
-                <p className="text-xs text-gray-500">{news.createdAt}</p> {/* ✅ show formatted date */}
-                {news.imageUrl && (
-                  <img
-                    src={news.imageUrl}
-                    alt={news.name || news.title}
-                    className="mt-2 rounded-md w-full max-h-40 object-cover"
-                  />
+  return (
+    <div className="min-h-screen bg-[#F9F7F1] p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header Section */}
+        <div className="mb-8">
+          <div className="flex items-center space-x-3 mb-2">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <BarChart3 className="h-6 w-6 text-primary" />
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+          </div>
+          <p className="text-gray-600 text-lg">
+            Welcome back! Here's an overview of your business performance and recent activity.
+          </p>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Total Sales */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Total Sales</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {formatPrice(stats.totalSales)}
+                </p>
+                {stats.salesGrowth && (
+                  <div className="flex items-center mt-2 text-sm">
+                    <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
+                    <span className="text-green-600 font-medium">
+                      +{stats.salesGrowth}% from last month
+                    </span>
+                  </div>
                 )}
-              </li>
-            ))}
-          </ul>
+              </div>
+              <div className="p-3 bg-green-100 rounded-lg">
+                <DollarSign className="h-6 w-6 text-green-600" />
+              </div>
+            </div>
+          </div>
+
+          {/* Total Products */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Total Products</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalProducts}</p>
+                <div className="flex items-center mt-2 text-sm text-gray-500">
+                  <Package className="h-4 w-4 mr-1" />
+                  <span>Active inventory</span>
+                </div>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <Package className="h-6 w-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+
+          {/* Total Customers */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Total Customers</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalCustomers}</p>
+                {stats.customerGrowth && (
+                  <div className="flex items-center mt-2 text-sm">
+                    <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
+                    <span className="text-green-600 font-medium">
+                      +{stats.customerGrowth}% growth
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="p-3 bg-purple-100 rounded-lg">
+                <Users className="h-6 w-6 text-purple-600" />
+              </div>
+            </div>
+          </div>
+
+          {/* Monthly Sales */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">This Month</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {formatPrice(stats.monthlySales)}
+                </p>
+                <div className="flex items-center mt-2 text-sm text-gray-500">
+                  <Activity className="h-4 w-4 mr-1" />
+                  <span>Monthly revenue</span>
+                </div>
+              </div>
+              <div className="p-3 bg-orange-100 rounded-lg">
+                <TrendingUp className="h-6 w-6 text-orange-600" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
+          {/* Recent Orders - Takes 2/3 width */}
+          <div className="xl:col-span-2">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <Clock className="h-5 w-5 text-gray-400" />
+                    <h2 className="text-xl font-semibold text-gray-900">Recent Orders</h2>
+                  </div>
+                  <button 
+                    onClick={() => navigate('/sales')} 
+                    className="px-4 py-2 text-primary hover:bg-primary/5 rounded-lg transition-colors font-medium text-sm"
+                  >
+                    View All
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Customer</th>
+                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Product</th>
+                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Price</th>
+                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Status</th>
+                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {recentOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-12 text-center text-gray-500">
+                          <Package className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                          <p>No recent orders found</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      recentOrders.map((order) => (
+                        <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="py-4 px-6">
+                            <div className="font-medium text-gray-900">{order.customerName}</div>
+                          </td>
+                          <td className="py-4 px-6 text-gray-600">{order.product}</td>
+                          <td className="py-4 px-6">
+                            <span className="font-semibold text-gray-900">
+                              {formatPrice(order.price)}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${getStatusColor(order.status)}`}>
+                              {order.status}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 text-gray-500 text-sm">{order.date}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Actions Sidebar */}
+          <div className="space-y-6">
+            {/* Quick Actions */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <Plus className="h-5 w-5 mr-2 text-gray-400" />
+                Quick Actions
+              </h3>
+              <div className="space-y-3">
+                <button 
+                  onClick={handleAddNewProduct}
+                  className="w-full bg-primary text-white py-3 px-4 rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center space-x-2 font-medium"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add New Product</span>
+                </button>
+                <button 
+                  onClick={handleViewSalesReport}
+                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg hover:bg- [#F9F7F1] transition-colors flex items-center justify-center space-x-2 font-medium"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>View Sales Report</span>
+                </button>
+                <button 
+                  onClick={handleManageInventory}
+                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg hover:bg- [#F9F7F1] transition-colors flex items-center justify-center space-x-2 font-medium"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span>Manage Inventory</span>
+                </button>
+              </div>
+            </div>
+
+            {/* System Status */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <Activity className="h-5 w-5 mr-2 text-gray-400" />
+                System Status
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Database</span>
+                  <div className="flex items-center space-x-2">
+                    <div className="h-2 w-2 bg-green-500 rounded-full"></div>
+                    <span className="text-green-600 font-medium text-sm">Online</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Storage</span>
+                  <div className="flex items-center space-x-2">
+                    <div className="h-2 w-2 bg-green-500 rounded-full"></div>
+                    <span className="text-green-600 font-medium text-sm">Available</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Auto-cleanup</span>
+                  <div className="flex items-center space-x-2">
+                    <div className="h-2 w-2 bg-green-500 rounded-full"></div>
+                    <span className="text-green-600 font-medium text-sm">Active</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Latest News */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2 text-gray-400" />
+            Latest News
+          </h2>
+          {latestNews.length === 0 ? (
+            <div className="text-center py-8">
+              <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-gray-500">No news available at the moment.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {latestNews.map((news) => (
+                <div key={news.id} className="border border- [#F9F7F1] rounded-lg p-4 hover:shadow-md transition-shadow">
+                  {news.imageUrl && (
+                    <img
+                      src={news.imageUrl}
+                      alt={news.name || news.title}
+                      className="w-full h-32 object-cover rounded-md mb-4"
+                    />
+                  )}
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">
+                    {news.name || news.title}
+                  </h3>
+                  <p className="text-gray-600 text-sm line-clamp-3 mb-3">{news.description}</p>
+                  <p className="text-xs text-gray-500">{news.createdAt}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Add Product Modal */}
+        {showAddProductModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-semibold text-gray-900">Add New Product</h3>
+                <button
+                  onClick={() => setShowAddProductModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              
+              <p className="text-gray-600 mb-6 leading-relaxed">
+                Navigate to the Products page to add new items to your inventory and manage your product catalog.
+              </p>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowAddProductModal(false)}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddProductModal(false);
+                    navigate('/products');
+                  }}
+                  className="flex-1 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
+                >
+                  Go to Products
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Inventory Management Modal */}
+        {showInventoryModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-semibold text-gray-900">Inventory Overview</h3>
+                <button
+                  onClick={() => setShowInventoryModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              
+              <div className="space-y-4 mb-6">
+                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center space-x-3">
+                    <Package className="h-5 w-5 text-blue-600" />
+                    <span className="text-gray-900 font-medium">Available Products</span>
+                  </div>
+                  <span className="text-xl font-bold text-blue-600">{stats.totalProducts}</span>
+                </div>
+                <div className="flex items-center justify-between p-4 bg-orange-50 rounded-lg border border-orange-200">
+                  <div className="flex items-center space-x-3">
+                    <AlertCircle className="h-5 w-5 text-orange-600" />
+                    <span className="text-gray-900 font-medium">Low Stock Items</span>
+                  </div>
+                  <span className="text-xl font-bold text-orange-600">3</span>
+                </div>
+                <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200">
+                  <div className="flex items-center space-x-3">
+                    <X className="h-5 w-5 text-red-600" />
+                    <span className="text-gray-900 font-medium">Out of Stock</span>
+                  </div>
+                  <span className="text-xl font-bold text-red-600">1</span>
+                </div>
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowInventoryModal(false)}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setShowInventoryModal(false);
+                    navigate('/products');
+                  }}
+                  className="flex-1 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
+                >
+                  Manage Products
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-        <div className="card">
-          <h3 className="text-lg font-semibold text-secondary mb-4">Quick Actions</h3>
-          <div className="space-y-3">
-            <button 
-              onClick={handleAddNewProduct}
-              className="w-full btn-primary flex items-center justify-center space-x-2"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add New Product</span>
-            </button>
-            <button 
-              onClick={handleViewSalesReport}
-              className="w-full btn-secondary flex items-center justify-center space-x-2"
-            >
-              <FileText className="h-4 w-4" />
-              <span>View Sales Report</span>
-            </button>
-            <button 
-              onClick={handleManageInventory}
-              className="w-full btn-secondary flex items-center justify-center space-x-2"
-            >
-              <Settings className="h-4 w-4" />
-              <span>Manage Inventory</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="card">
-          <h3 className="text-lg font-semibold text-secondary mb-4">System Status</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-600">Database</span>
-              <span className="text-green-600 font-medium">Online</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-600">Storage</span>
-              <span className="text-green-600 font-medium">Available</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-600">Auto-cleanup</span>
-              <span className="text-green-600 font-medium">Active</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Add Product Modal */}
-      {showAddProductModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-secondary">Add New Product</h3>
-              <button
-                onClick={() => setShowAddProductModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <p className="text-gray-600 mb-6">
-              Navigate to the Products page to add new items to your inventory.
-            </p>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowAddProductModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowAddProductModal(false);
-                  navigate('/products');
-                }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Go to Products
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Inventory Management Modal */}
-      {showInventoryModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-secondary">Inventory Management</h3>
-              <button
-                onClick={() => setShowInventoryModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-4 mb-6">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="text-gray-700">Available Products</span>
-                <span className="font-semibold text-primary">{stats.totalProducts}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="text-gray-700">Low Stock Items</span>
-                <span className="font-semibold text-orange-600">3</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="text-gray-700">Out of Stock</span>
-                <span className="font-semibold text-red-600">1</span>
-              </div>
-            </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowInventoryModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  setShowInventoryModal(false);
-                  navigate('/products');
-                }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Manage Products
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
