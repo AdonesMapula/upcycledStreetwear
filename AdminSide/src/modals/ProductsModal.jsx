@@ -1,5 +1,8 @@
 // ProductsModal.jsx
 
+import { useState, useEffect } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { X, Upload, Gavel } from 'lucide-react';
 
 const ProductsModal = ({
@@ -20,6 +23,32 @@ const ProductsModal = ({
   setFormData,
   removeImageUrl
 }) => {
+  const [categories, setCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      setLoadingCategories(true);
+      try {
+        const querySnapshot = await getDocs(collection(db, 'categories'));
+        const categoriesList = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setCategories(categoriesList);
+      } catch (err) {
+        console.error("Failed to fetch categories:", err);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+
+    if (showModal) {
+      fetchCategories();
+    }
+  }, [showModal]);
+
+
   return (
     showModal && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -217,14 +246,23 @@ const ProductsModal = ({
                 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Category</label>
-                  <input
-                    type="text"
-                    value={formData.category}
-                    onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none"
-                    required
-                    placeholder="e.g., T-Shirts, Hoodies, Jeans"
-                  />
+                  {loadingCategories ? (
+                    <div className="w-full px-4 py-3 text-gray-500 border border-gray-200 rounded-lg animate-pulse">Loading categories...</div>
+                  ) : (
+                    <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({...formData, category: e.target.value})}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#135918] focus:border-[#135918] outline-none bg-white"
+                      required
+                    >
+                      <option value="">Select Category</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.name}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>

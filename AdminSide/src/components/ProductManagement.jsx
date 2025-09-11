@@ -29,6 +29,9 @@ import { db, storage } from '../firebase/config';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import ProductsModal from '../modals/ProductsModal';
 import BidManagementModal from '../modals/BidManagementModal';
+import CategoryModal from '../modals/CategoryModal';
+import { useAlert } from "../contexts/alertContext";
+
 
 const ProductManagement = () => {
   // State variables for UI and data management
@@ -45,6 +48,8 @@ const ProductManagement = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false); // New state for category modal
+
 
   // Form data state
   const [formData, setFormData] = useState({
@@ -566,6 +571,15 @@ const ProductManagement = () => {
                 </div>
               </div>
             </div>
+            <div className='pl-60 flex items-center gap-3'>
+            <button
+              onClick={() => setShowCategoryModal(true)} // Set the state to true on click
+              className="bg-[#135918] hover:bg-[#0F4713] text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-200"
+            >
+              <Plus className="h-5 w-5" />
+              <span>Add Category</span>
+            </button>
+          </div>
             <button
               onClick={() => setShowModal(true)}
               className="bg-[#135918] hover:bg-[#0F4713] text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-200"
@@ -970,7 +984,12 @@ const ProductManagement = () => {
             resetForm={resetForm}
           />
         )}
-
+        {showCategoryModal && (
+          <CategoryModal
+            showModal={showCategoryModal}
+            setShowModal={setShowCategoryModal}
+          />
+        )}
         <BidManagementModal
           showBidModal={showBidModal}
           selectedBidProduct={selectedBidProduct}
